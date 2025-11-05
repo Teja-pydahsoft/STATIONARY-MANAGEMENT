@@ -29,7 +29,7 @@ const Sidebar = ({ onLogout, isMobile: isMobileProp, sidebarOpen, setSidebarOpen
     { path: '/student-management', label: 'Manage Students', icon: Users },
     { path: '/sub-admin-management', label: 'Manage Sub-Admins', icon: UserPlus, superAdminOnly: true },
     { path: '/courses', label: 'Add Courses', icon: GraduationCap },
-    { path: '/items', label: 'Manage Products', icon: List },
+    { path: '/manage-stock', label: 'Manage Stock', icon: List },
     { path: '/transactions', label: 'Transactions', icon: Receipt },
     { path: '/settings', label: 'Settings', icon: Settings },
   ].filter(item => !item.superAdminOnly || isSuperAdmin);

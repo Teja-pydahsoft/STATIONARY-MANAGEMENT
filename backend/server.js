@@ -7,6 +7,8 @@ const dotenv = require('dotenv');
 const subAdminRoutes = require('./routes/subAdminRoutes');
 const academicConfigRoutes = require('./routes/academicConfigRoutes');
 const transactionRoutes = require('./routes/transactionRoutes');
+const vendorRoutes = require('./routes/vendorRoutes');
+const stockEntryRoutes = require('./routes/stockEntryRoutes');
 
 dotenv.config();
 
@@ -74,6 +76,10 @@ app.use('/api', subAdminRoutes);
 app.use('/api', academicConfigRoutes);
 // Mount transaction routes
 app.use('/api/transactions', transactionRoutes);
+// Mount vendor routes
+app.use('/api/vendors', vendorRoutes);
+// Mount stock entry routes
+app.use('/api/stock-entries', stockEntryRoutes);
 
 // Error handling middleware (must be after all routes)
 app.use((err, req, res, next) => {

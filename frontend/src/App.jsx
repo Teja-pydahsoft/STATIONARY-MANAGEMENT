@@ -9,7 +9,7 @@ import AddStudent from './pages/AddStudent';
 import StudentManagement from './pages/StudentManagement';
 import Login from './pages/Login';
 import SubAdminManagement from './pages/SubAdminManagement';
-import ProductList from './pages/ProductList';
+import ManageStock from './pages/ManageStock';
 import HomePage from './pages/HomePage';
 import CourseManagement from './pages/CourseManagement';
 import Transactions from './pages/Transactions';
@@ -276,8 +276,8 @@ function App() {
                   element={<SubAdminManagement currentUser={currentUser} />}
                 />
                 <Route
-                  path="/items"
-                  element={<ProductList itemCategories={itemCategories} addItemCategory={addItemCategory} setItemCategories={setItemCategories} currentCourse={currentCourse} products={products} setProducts={setProducts} />}
+                  path="/manage-stock"
+                  element={<ManageStock itemCategories={itemCategories} addItemCategory={addItemCategory} setItemCategories={setItemCategories} currentCourse={currentCourse} products={products} setProducts={setProducts} />}
                 />
                 <Route path="/courses" element={<CourseManagement />} />
                 <Route path="/transactions" element={<Transactions />} />

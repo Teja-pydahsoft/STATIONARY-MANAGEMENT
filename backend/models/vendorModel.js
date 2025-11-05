@@ -1,0 +1,63 @@
+const mongoose = require('mongoose');
+
+const vendorSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: [true, 'Please provide a vendor name'],
+      trim: true,
+      unique: true,
+    },
+    contactPerson: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    email: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      default: '',
+    },
+    phone: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    address: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    gstNumber: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    paymentTerms: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    remarks: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+// Index for faster search
+vendorSchema.index({ name: 1 });
+
+const Vendor = mongoose.model('Vendor', vendorSchema);
+
+module.exports = { Vendor };
+

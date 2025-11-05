@@ -1,6 +1,4 @@
 const { User } = require('../models/userModel');
-const { Order } = require('../models/orderModel');
-const { Product } = require('../models/productModel');
 const asyncHandler = require('express-async-handler');
 
 /**
@@ -75,14 +73,7 @@ const getUsersByCourse = asyncHandler(async (req, res) => {
     throw new Error('Course parameter is required');
   }
 
-  // Populate orders for each user, and then populate the products within each order's orderItems
-  const users = await User.find({ course }).populate({
-    path: 'orders',
-    populate: {
-      path: 'orderItems.product',
-      model: Product.modelName,
-    },
-  });
+  const users = await User.find({ course });
   res.status(200).json(users);
 });
 
@@ -92,13 +83,7 @@ const getUsersByCourse = asyncHandler(async (req, res) => {
  * @access  Private/Admin (Should be protected in a real app)
  */
 const getAllUsers = asyncHandler(async (req, res) => {
-  const users = await User.find({}).populate({
-    path: 'orders',
-    populate: {
-      path: 'orderItems.product',
-      model: Product.modelName,
-    },
-  });
+  const users = await User.find({});
   res.status(200).json(users);
 });
 
