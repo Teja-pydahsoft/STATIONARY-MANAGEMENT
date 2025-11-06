@@ -18,23 +18,35 @@ const app = express();
 connectDB();
 
 // CORS configuration
+const allowedOrigins = [
+  "https://pydah-stationary-management.vercel.app",
+  "http://localhost:5173",
+  "http://localhost:5000",
+  "http://localhost:3000",
+];
+
 const corsOptions = {
   origin: function (origin, callback) {
-    const allowedOrigins = [
-      "https://pydah-stationary-management.vercel.app/",
-      "https://pydah-stationary-management.vercel.app",
-      "http://localhost:5173",
-      "http://localhost:5000",
-    ];
-
     // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
+    if (!origin) {
+      return callback(null, true);
+    }
 
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    // Check if origin is in allowed list
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      // Log for debugging
       console.log("CORS blocked request from:", origin);
-      callback(new Error("Not allowed by CORS"));
+      console.log("Allowed origins:", allowedOrigins);
+      // For development, allow all origins
+      if (process.env.NODE_ENV === 'development') {
+        callback(null, true);
+      } else {
+        // In production, be strict but log the issue
+        console.error(`CORS Error: Origin ${origin} not allowed`);
+        callback(new Error("Not allowed by CORS"));
+      }
     }
   },
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
@@ -55,6 +67,25 @@ const corsOptions = {
 
 // Enable CORS
 app.use(cors(corsOptions));
+
+// Additional CORS headers middleware (fallback)
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-auth-token, Origin, Accept, X-Requested-With');
+  }
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(204);
+    return;
+  }
+  
+  next();
+});
 
 // Middleware to parse JSON
 app.use(express.json());
