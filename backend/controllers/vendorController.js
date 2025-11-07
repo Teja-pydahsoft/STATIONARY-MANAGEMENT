@@ -1,5 +1,7 @@
 const { Vendor } = require('../models/vendorModel');
 
+const trimString = (value) => (typeof value === 'string' ? value.trim() : '');
+
 /**
  * @desc    Create a new vendor
  * @route   POST /api/vendors
@@ -7,7 +9,23 @@ const { Vendor } = require('../models/vendorModel');
  */
 const createVendor = async (req, res) => {
   try {
-    const { name, contactPerson, email, phone, address, gstNumber, paymentTerms, remarks } = req.body;
+    const {
+      name,
+      contactPerson,
+      email,
+      phone,
+      address,
+      gstNumber,
+      paymentTerms,
+      remarks,
+      bankDetails = {},
+      accountHolderName,
+      bankName,
+      branchName,
+      accountNumber,
+      ifscCode,
+      upiId,
+    } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({ message: 'Vendor name is required' });
@@ -21,14 +39,22 @@ const createVendor = async (req, res) => {
 
     const vendor = new Vendor({
       name: name.trim(),
-      contactPerson: contactPerson?.trim() || '',
-      email: email?.trim().toLowerCase() || '',
-      phone: phone?.trim() || '',
-      address: address?.trim() || '',
-      gstNumber: gstNumber?.trim() || '',
-      paymentTerms: paymentTerms?.trim() || '',
-      remarks: remarks?.trim() || '',
+      contactPerson: trimString(contactPerson),
+      email: trimString(email).toLowerCase(),
+      phone: trimString(phone),
+      address: trimString(address),
+      gstNumber: trimString(gstNumber),
+      paymentTerms: trimString(paymentTerms),
+      remarks: trimString(remarks),
       isActive: true,
+      bankDetails: {
+        accountHolderName: trimString(accountHolderName ?? bankDetails.accountHolderName),
+        bankName: trimString(bankName ?? bankDetails.bankName),
+        branchName: trimString(branchName ?? bankDetails.branchName),
+        accountNumber: trimString(accountNumber ?? bankDetails.accountNumber),
+        ifscCode: trimString(ifscCode ?? bankDetails.ifscCode).toUpperCase(),
+        upiId: trimString(upiId ?? bankDetails.upiId),
+      },
     });
 
     const createdVendor = await vendor.save();
@@ -93,7 +119,24 @@ const updateVendor = async (req, res) => {
       return res.status(404).json({ message: 'Vendor not found' });
     }
 
-    const { name, contactPerson, email, phone, address, gstNumber, paymentTerms, remarks, isActive } = req.body;
+    const {
+      name,
+      contactPerson,
+      email,
+      phone,
+      address,
+      gstNumber,
+      paymentTerms,
+      remarks,
+      isActive,
+      bankDetails = {},
+      accountHolderName,
+      bankName,
+      branchName,
+      accountNumber,
+      ifscCode,
+      upiId,
+    } = req.body;
 
     // If name is being changed, check if new name already exists
     if (name && name.trim() !== vendor.name) {
@@ -104,14 +147,25 @@ const updateVendor = async (req, res) => {
       vendor.name = name.trim();
     }
 
-    if (contactPerson !== undefined) vendor.contactPerson = contactPerson?.trim() || '';
-    if (email !== undefined) vendor.email = email?.trim().toLowerCase() || '';
-    if (phone !== undefined) vendor.phone = phone?.trim() || '';
-    if (address !== undefined) vendor.address = address?.trim() || '';
-    if (gstNumber !== undefined) vendor.gstNumber = gstNumber?.trim() || '';
-    if (paymentTerms !== undefined) vendor.paymentTerms = paymentTerms?.trim() || '';
-    if (remarks !== undefined) vendor.remarks = remarks?.trim() || '';
+    if (contactPerson !== undefined) vendor.contactPerson = trimString(contactPerson);
+    if (email !== undefined) vendor.email = trimString(email).toLowerCase();
+    if (phone !== undefined) vendor.phone = trimString(phone);
+    if (address !== undefined) vendor.address = trimString(address);
+    if (gstNumber !== undefined) vendor.gstNumber = trimString(gstNumber);
+    if (paymentTerms !== undefined) vendor.paymentTerms = trimString(paymentTerms);
+    if (remarks !== undefined) vendor.remarks = trimString(remarks);
     if (isActive !== undefined) vendor.isActive = isActive;
+
+    const updatedBankDetails = {
+      accountHolderName: trimString(accountHolderName ?? bankDetails.accountHolderName ?? vendor.bankDetails?.accountHolderName),
+      bankName: trimString(bankName ?? bankDetails.bankName ?? vendor.bankDetails?.bankName),
+      branchName: trimString(branchName ?? bankDetails.branchName ?? vendor.bankDetails?.branchName),
+      accountNumber: trimString(accountNumber ?? bankDetails.accountNumber ?? vendor.bankDetails?.accountNumber),
+      ifscCode: trimString(ifscCode ?? bankDetails.ifscCode ?? vendor.bankDetails?.ifscCode).toUpperCase(),
+      upiId: trimString(upiId ?? bankDetails.upiId ?? vendor.bankDetails?.upiId),
+    };
+
+    vendor.bankDetails = updatedBankDetails;
 
     const updated = await vendor.save();
     res.json(updated);

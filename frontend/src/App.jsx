@@ -4,7 +4,7 @@ import { Menu } from 'lucide-react';
 import Sidebar from './Sidebar';
 import Dashboard from './pages/Dashboard';
 import StudentDetail from './pages/StudentDetail';
-import CourseDashboard from './pages/CourseDashboard';
+import StudentDashboard from './pages/StudentDashboard';
 import AddStudent from './pages/AddStudent';
 import StudentManagement from './pages/StudentManagement';
 import Login from './pages/Login';
@@ -257,17 +257,17 @@ function App() {
                   element={<Dashboard />}
                 />
                 <Route
-                  path="/course/:course"
+                  path="/students-dashboard"
                   element={
-                    <ProtectedRoute currentUser={currentUser} requiredPermission="course-dashboard">
-                      <CourseDashboard products={products} />
+                    <ProtectedRoute currentUser={currentUser} requiredPermissions={["student-dashboard", "course-dashboard"]}>
+                      <StudentDashboard />
                     </ProtectedRoute>
                   }
                 />
                 <Route
                   path="/student/:id"
                   element={
-                    <ProtectedRoute currentUser={currentUser} requiredPermissions={["student-management", "course-dashboard"]}>
+                    <ProtectedRoute currentUser={currentUser} requiredPermissions={["student-management", "student-dashboard", "course-dashboard"]}>
                       <StudentDetail students={students} setStudents={setStudents} products={products} />
                     </ProtectedRoute>
                   }

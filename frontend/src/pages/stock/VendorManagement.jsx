@@ -23,6 +23,12 @@ const VendorManagement = () => {
     paymentTerms: '',
     remarks: '',
     isActive: true,
+    accountHolderName: '',
+    bankName: '',
+    branchName: '',
+    accountNumber: '',
+    ifscCode: '',
+    upiId: '',
   });
 
   useEffect(() => {
@@ -63,10 +69,30 @@ const VendorManagement = () => {
       
       const method = editingVendor ? 'PUT' : 'POST';
       
+      const payload = {
+        name: formData.name,
+        contactPerson: formData.contactPerson,
+        email: formData.email,
+        phone: formData.phone,
+        address: formData.address,
+        gstNumber: formData.gstNumber,
+        paymentTerms: formData.paymentTerms,
+        remarks: formData.remarks,
+        isActive: formData.isActive,
+        bankDetails: {
+          accountHolderName: formData.accountHolderName,
+          bankName: formData.bankName,
+          branchName: formData.branchName,
+          accountNumber: formData.accountNumber,
+          ifscCode: formData.ifscCode,
+          upiId: formData.upiId,
+        },
+      };
+
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -108,6 +134,12 @@ const VendorManagement = () => {
       paymentTerms: vendor.paymentTerms || '',
       remarks: vendor.remarks || '',
       isActive: vendor.isActive !== undefined ? vendor.isActive : true,
+      accountHolderName: vendor.bankDetails?.accountHolderName || '',
+      bankName: vendor.bankDetails?.bankName || '',
+      branchName: vendor.bankDetails?.branchName || '',
+      accountNumber: vendor.bankDetails?.accountNumber || '',
+      ifscCode: vendor.bankDetails?.ifscCode || '',
+      upiId: vendor.bankDetails?.upiId || '',
     });
     setShowModal(true);
   };
@@ -140,6 +172,12 @@ const VendorManagement = () => {
       paymentTerms: '',
       remarks: '',
       isActive: true,
+      accountHolderName: '',
+      bankName: '',
+      branchName: '',
+      accountNumber: '',
+      ifscCode: '',
+      upiId: '',
     });
     setEditingVendor(null);
   };
@@ -159,7 +197,10 @@ const VendorManagement = () => {
       vendor.name?.toLowerCase().includes(query) ||
       vendor.contactPerson?.toLowerCase().includes(query) ||
       vendor.email?.toLowerCase().includes(query) ||
-      vendor.phone?.toLowerCase().includes(query)
+      vendor.phone?.toLowerCase().includes(query) ||
+      vendor.bankDetails?.accountNumber?.toLowerCase?.().includes(query) ||
+      vendor.bankDetails?.ifscCode?.toLowerCase?.().includes(query) ||
+      vendor.bankDetails?.upiId?.toLowerCase?.().includes(query)
     );
   });
 
@@ -317,6 +358,28 @@ const VendorManagement = () => {
                   <div className="pt-2 border-t border-gray-100">
                     <p className="text-xs text-gray-500 mb-1">Payment Terms:</p>
                     <p className="text-sm text-gray-700">{vendor.paymentTerms}</p>
+                  </div>
+                )}
+                {(vendor.bankDetails && (vendor.bankDetails.accountHolderName || vendor.bankDetails.bankName || vendor.bankDetails.accountNumber || vendor.bankDetails.upiId)) && (
+                  <div className="pt-2 border-t border-gray-100 space-y-1">
+                    <p className="text-xs text-gray-500 mb-1">Bank Details:</p>
+                    {vendor.bankDetails.accountHolderName && (
+                      <p className="text-xs text-gray-600">Account Holder: <span className="font-medium">{vendor.bankDetails.accountHolderName}</span></p>
+                    )}
+                    {vendor.bankDetails.bankName && (
+                      <p className="text-xs text-gray-600">
+                        Bank: <span className="font-medium">{vendor.bankDetails.bankName}{vendor.bankDetails.branchName ? `, ${vendor.bankDetails.branchName}` : ''}</span>
+                      </p>
+                    )}
+                    {vendor.bankDetails.accountNumber && (
+                      <p className="text-xs text-gray-600">Account No: <span className="font-medium">{vendor.bankDetails.accountNumber}</span></p>
+                    )}
+                    {vendor.bankDetails.ifscCode && (
+                      <p className="text-xs text-gray-600">IFSC: <span className="font-medium">{vendor.bankDetails.ifscCode}</span></p>
+                    )}
+                    {vendor.bankDetails.upiId && (
+                      <p className="text-xs text-gray-600">UPI ID: <span className="font-medium">{vendor.bankDetails.upiId}</span></p>
+                    )}
                   </div>
                 )}
               </div>
@@ -518,6 +581,91 @@ const VendorManagement = () => {
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
                   placeholder="Any additional notes..."
                 />
+              </div>
+
+              {/* Bank Details */}
+              <div className="pt-2 border-t border-gray-200">
+                <p className="text-sm font-semibold text-gray-700 mb-3">Bank Details</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Account Holder Name
+                    </label>
+                    <input
+                      type="text"
+                      name="accountHolderName"
+                      value={formData.accountHolderName}
+                      onChange={handleChange}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Name as per bank"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Bank Name
+                    </label>
+                    <input
+                      type="text"
+                      name="bankName"
+                      value={formData.bankName}
+                      onChange={handleChange}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Bank name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Branch Name
+                    </label>
+                    <input
+                      type="text"
+                      name="branchName"
+                      value={formData.branchName}
+                      onChange={handleChange}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Branch"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Account Number
+                    </label>
+                    <input
+                      type="text"
+                      name="accountNumber"
+                      value={formData.accountNumber}
+                      onChange={handleChange}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Account number"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      IFSC Code
+                    </label>
+                    <input
+                      type="text"
+                      name="ifscCode"
+                      value={formData.ifscCode}
+                      onChange={handleChange}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="IFSC code"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      UPI ID
+                    </label>
+                    <input
+                      type="text"
+                      name="upiId"
+                      value={formData.upiId}
+                      onChange={handleChange}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="UPI ID (optional)"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Active Status */}

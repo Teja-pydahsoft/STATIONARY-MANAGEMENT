@@ -1,5 +1,43 @@
 const { Product } = require('../models/productModel');
 
+const sanitizeSetItems = async (setItems) => {
+  if (!Array.isArray(setItems) || setItems.length === 0) return [];
+
+  const normalizedItems = setItems
+    .map((item) => {
+      const productId = item?.productId || item?.product || item?._id;
+      if (!productId) return null;
+      const quantityRaw = Number(item?.quantity);
+      const quantity = Number.isFinite(quantityRaw) && quantityRaw > 0 ? Math.round(quantityRaw) : 1;
+      return { productId, quantity };
+    })
+    .filter(Boolean);
+
+  if (normalizedItems.length === 0) return [];
+
+  const productIds = [...new Set(normalizedItems.map((item) => String(item.productId)))];
+
+  const existingProducts = await Product.find({
+    _id: { $in: productIds },
+    $or: [{ isSet: { $exists: false } }, { isSet: false }],
+  }).select('name price');
+
+  const existingMap = new Map(existingProducts.map((prod) => [String(prod._id), prod]));
+
+  return normalizedItems
+    .map((item) => {
+      const match = existingMap.get(String(item.productId));
+      if (!match) return null;
+      return {
+        product: match._id,
+        quantity: item.quantity,
+        productNameSnapshot: match.name,
+        productPriceSnapshot: match.price,
+      };
+    })
+    .filter(Boolean);
+};
+
 /**
  * @desc    Create a new product
  * @route   POST /api/products
@@ -14,7 +52,7 @@ const createProduct = async (req, res) => {
   } catch (diagErr) {
     console.warn('Could not read Product schema year options:', diagErr);
   }
-  const { name, description, price, stock, imageUrl, forCourse, branch, years, year, remarks } = req.body;
+  const { name, description, price, stock, imageUrl, forCourse, branch, years, year, remarks, isSet, setItems, lowStockThreshold } = req.body;
   // Handle years array - if years is provided, use it; otherwise fallback to year for backward compatibility
   let parsedYears = [];
   if (years && Array.isArray(years)) {
@@ -30,6 +68,18 @@ const createProduct = async (req, res) => {
   const parsedPrice = price !== undefined && price !== null && price !== '' ? Number(price) : 0;
   let parsedStock = stock !== undefined && stock !== null && stock !== '' ? Number(stock) : 0;
 
+  const sanitizedSetItems = isSet ? await sanitizeSetItems(setItems) : [];
+  if (isSet && sanitizedSetItems.length === 0) {
+    return res.status(400).json({ message: 'Set products must include at least one existing item' });
+  }
+  if (isSet) {
+    parsedStock = parsedStock < 0 ? 0 : parsedStock;
+  }
+
+    const thresholdNumber = lowStockThreshold !== undefined && lowStockThreshold !== null && lowStockThreshold !== ''
+      ? Math.max(0, Number(lowStockThreshold) || 0)
+      : undefined;
+
     const product = new Product({
       name,
       description: description || '', // Description is optional, can be added later
@@ -43,9 +93,13 @@ const createProduct = async (req, res) => {
       year: parsedYears.length === 1 ? parsedYears[0] : (parsedYears.length === 0 ? 0 : parsedYears[0]), // Backward compatibility
       remarks: remarks || '',
       lastPriceUpdated: new Date(), // Set initial price update date
+      isSet: Boolean(isSet),
+      setItems: sanitizedSetItems,
+      lowStockThreshold: Boolean(isSet) ? 0 : thresholdNumber,
     });
 
     const createdProduct = await product.save();
+    await createdProduct.populate({ path: 'setItems.product', select: 'name price isSet' });
     console.log('Created product id:', createdProduct._id);
     res.status(201).json(createdProduct);
   } catch (error) {
@@ -74,7 +128,7 @@ const getProducts = async (req, res) => {
         ];
       }
     }
-    const products = await Product.find(filter);
+    const products = await Product.find(filter).populate({ path: 'setItems.product', select: 'name price isSet' });
     res.status(200).json(products);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching products', error: error.message });
@@ -88,7 +142,7 @@ const getProducts = async (req, res) => {
  */
 const getProductById = async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id);
+    const product = await Product.findById(req.params.id).populate({ path: 'setItems.product', select: 'name price isSet' });
 
     if (product) {
       res.status(200).json(product);
@@ -110,7 +164,7 @@ const updateProduct = async (req, res) => {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
-  const { name, description, price, stock, imageUrl, forCourse, branch, years, year, remarks } = req.body;
+  const { name, description, price, stock, imageUrl, forCourse, branch, years, year, remarks, isSet, setItems, lowStockThreshold } = req.body;
   // Handle years array - if years is provided, use it; otherwise fallback to year for backward compatibility
   let parsedYears = undefined;
   if (years !== undefined && Array.isArray(years)) {
@@ -155,7 +209,35 @@ const updateProduct = async (req, res) => {
     }
     product.remarks = remarks !== undefined ? remarks : product.remarks;
 
+    const isSetFlag = isSet !== undefined ? Boolean(isSet) : product.isSet;
+    let sanitizedSetItems = product.setItems;
+
+    if (isSetFlag) {
+      const incomingSetItems = setItems !== undefined ? setItems : product.setItems;
+      sanitizedSetItems = await sanitizeSetItems(incomingSetItems);
+      if (sanitizedSetItems.length === 0) {
+        return res.status(400).json({ message: 'Set products must include at least one existing item' });
+      }
+    }
+
+    product.isSet = isSetFlag;
+    if (product.isSet) {
+      product.setItems = sanitizedSetItems;
+      if (product.stock < 0) {
+        product.stock = 0;
+      }
+      product.lowStockThreshold = 0;
+    } else if (isSet !== undefined && !product.isSet) {
+      product.setItems = [];
+    }
+
+    if (!product.isSet && lowStockThreshold !== undefined) {
+      const thresholdNumber = Math.max(0, Number(lowStockThreshold) || 0);
+      product.lowStockThreshold = thresholdNumber;
+    }
+
     const updated = await product.save();
+    await updated.populate({ path: 'setItems.product', select: 'name price isSet' });
     res.json(updated);
   } catch (error) {
     res.status(400).json({ message: 'Error updating product', error: error.message });

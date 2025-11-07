@@ -8,7 +8,7 @@ const SIDEBAR_ITEMS = [
   { path: '/add-student', label: 'Add Student', key: 'add-student' },
   { path: '/student-management', label: 'Manage Students', key: 'student-management' },
   { path: '/courses', label: 'Add Courses', key: 'courses' },
-  { path: '/course/:course', label: 'Course Dashboard', key: 'course-dashboard' },
+  { path: '/students-dashboard', label: 'Student Dashboard', key: 'course-dashboard' },
   { path: '/manage-stock', label: 'Manage Stock', key: 'manage-stock' },
   { path: '/transactions', label: 'Transactions', key: 'transactions' },
   { path: '/settings', label: 'Settings', key: 'settings' },

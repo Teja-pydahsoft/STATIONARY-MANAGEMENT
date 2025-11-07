@@ -44,6 +44,38 @@ const vendorSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
+    bankDetails: {
+      accountHolderName: {
+        type: String,
+        trim: true,
+        default: '',
+      },
+      bankName: {
+        type: String,
+        trim: true,
+        default: '',
+      },
+      branchName: {
+        type: String,
+        trim: true,
+        default: '',
+      },
+      accountNumber: {
+        type: String,
+        trim: true,
+        default: '',
+      },
+      ifscCode: {
+        type: String,
+        trim: true,
+        default: '',
+      },
+      upiId: {
+        type: String,
+        trim: true,
+        default: '',
+      },
+    },
     isActive: {
       type: Boolean,
       default: true,

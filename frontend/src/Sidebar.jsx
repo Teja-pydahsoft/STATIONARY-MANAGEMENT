@@ -25,7 +25,7 @@ const Sidebar = ({ onLogout, isMobile: isMobileProp, sidebarOpen, setSidebarOpen
     if (sidebarOpen) {
       const timer = setTimeout(() => {
         setSidebarOpen(false);
-      }, 6000); // 6 seconds
+      }, 22000); // 22 seconds
 
       return () => clearTimeout(timer);
     }
@@ -41,6 +41,7 @@ const Sidebar = ({ onLogout, isMobile: isMobileProp, sidebarOpen, setSidebarOpen
     { path: '/', label: 'Dashboard', icon: Home, exact: true, permissionKey: 'dashboard' },
     { path: '/add-student', label: 'Add Student', icon: PlusCircle, permissionKey: 'add-student' },
     { path: '/student-management', label: 'Manage Students', icon: Users, permissionKey: 'student-management' },
+    { path: '/students-dashboard', label: 'Student Dashboard', icon: GraduationCap, permissionKey: 'course-dashboard' },
     { path: '/sub-admin-management', label: 'Manage Sub-Admins', icon: UserPlus, superAdminOnly: true },
     { path: '/courses', label: 'Add Courses', icon: GraduationCap, permissionKey: 'courses' },
     { path: '/manage-stock', label: 'Manage Stock', icon: List, permissionKey: 'manage-stock' },

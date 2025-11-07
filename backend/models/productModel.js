@@ -61,6 +61,11 @@ const productSchema = new mongoose.Schema(
       default: 0,
       min: [0, 'Stock cannot be negative'],
     },
+    lowStockThreshold: {
+      type: Number,
+      default: 10,
+      min: [0, 'Threshold cannot be negative'],
+    },
     imageUrl: {
       type: String,
     },
@@ -69,6 +74,36 @@ const productSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: '',
+    },
+    // Set/Bundled product metadata
+    isSet: {
+      type: Boolean,
+      default: false,
+    },
+    setItems: {
+      type: [{
+        product: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Product',
+          required: true,
+        },
+        quantity: {
+          type: Number,
+          min: [1, 'Quantity must be at least 1'],
+          default: 1,
+        },
+        productNameSnapshot: {
+          type: String,
+          default: '',
+          trim: true,
+        },
+        productPriceSnapshot: {
+          type: Number,
+          min: 0,
+          default: 0,
+        },
+      }],
+      default: [],
     },
     // Price management fields
     lastPriceUpdated: {

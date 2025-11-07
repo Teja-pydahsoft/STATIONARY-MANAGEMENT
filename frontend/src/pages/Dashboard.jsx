@@ -12,12 +12,12 @@ const Dashboard = () => {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
   const isSuperAdmin = currentUser?.role === 'Administrator';
   const permissions = currentUser?.permissions || [];
-  const hasCourseDashboardPermission = isSuperAdmin || permissions.includes('course-dashboard');
-  const [courseStats, setCourseStats] = useState({});
-  const [courses, setCourses] = useState([]);
+  const hasStudentDashboardPermission = isSuperAdmin || permissions.includes('student-dashboard') || permissions.includes('course-dashboard');
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalStudents: 0,
+    paidStudents: 0,
+    unpaidStudents: 0,
     totalTransactions: 0,
     totalRevenue: 0,
     pendingRevenue: 0,
@@ -36,15 +36,6 @@ const Dashboard = () => {
       setLoading(true);
       
       try {
-        // Fetch academic config to get courses
-        const configRes = await fetch(apiUrl('/api/config/academic'));
-        let coursesList = [];
-        if (configRes.ok) {
-          const configData = await configRes.json();
-          coursesList = configData.courses || [];
-          setCourses(coursesList);
-        }
-
         // Fetch all data in parallel
         const [
           studentsRes,
@@ -62,16 +53,16 @@ const Dashboard = () => {
 
         // Process students
         let totalStudents = 0;
-        const courseStatsMap = {};
+        let paidStudents = 0;
+        let unpaidStudents = 0;
         if (studentsRes.ok) {
           const students = await studentsRes.json();
           totalStudents = students.length;
           students.forEach(student => {
-            const course = student.course;
-            courseStatsMap[course] = (courseStatsMap[course] || 0) + 1;
+            if (student.paid) paidStudents += 1;
+            else unpaidStudents += 1;
           });
         }
-        setCourseStats(courseStatsMap);
 
         // Process transactions
         let totalTransactions = 0;
@@ -122,7 +113,8 @@ const Dashboard = () => {
           products.forEach(product => {
             const stockValue = (product.stock || 0) * (product.price || 0);
             totalStockValue += stockValue;
-            if ((product.stock || 0) < 10) {
+            const threshold = typeof product.lowStockThreshold === 'number' ? product.lowStockThreshold : 10;
+            if ((product.stock || 0) < threshold) {
               lowStockItems++;
             }
           });
@@ -137,6 +129,8 @@ const Dashboard = () => {
 
         setStats({
           totalStudents,
+          paidStudents,
+          unpaidStudents,
           totalTransactions,
           totalRevenue,
           pendingRevenue,
@@ -354,9 +348,9 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* Course Overview - Show locked state if no permission */}
-          <div className={`bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl p-6 shadow-lg transition-shadow relative ${!hasCourseDashboardPermission ? 'opacity-60' : 'hover:shadow-xl'}`}>
-            {!hasCourseDashboardPermission && (
+          {/* Student Overview */}
+          <div className={`bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl p-6 shadow-lg transition-shadow relative ${!hasStudentDashboardPermission ? 'opacity-60' : 'hover:shadow-xl'}`}>
+            {!hasStudentDashboardPermission && (
               <div className="absolute inset-0 bg-gray-900/30 rounded-xl flex items-center justify-center z-10 backdrop-blur-[2px]">
                 <div className="flex flex-col items-center gap-2">
                   <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
@@ -372,50 +366,40 @@ const Dashboard = () => {
                 <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
                   <GraduationCap size={20} className="text-white" />
                 </div>
-                Course Overview
-                {!hasCourseDashboardPermission && (
+                Student Overview
+                {!hasStudentDashboardPermission && (
                   <Lock size={16} className="text-white/80" />
                 )}
               </h3>
-            </div>
-            <div>
-              {courses.length > 0 ? (
-                <div className="space-y-3">
-                  {courses.map((course) => (
-                    <div
-                      key={course._id || course.name}
-                      className={`flex items-center justify-between p-4 bg-white/20 rounded-lg transition-colors backdrop-blur-sm ${
-                        hasCourseDashboardPermission 
-                          ? 'hover:bg-white/30 cursor-pointer group' 
-                          : 'cursor-not-allowed opacity-50'
-                      }`}
-                      onClick={() => {
-                        if (hasCourseDashboardPermission) {
-                          navigate(`/course/${course.name}`);
-                        }
-                      }}
-                    >
-                      <div>
-                        <p className="font-semibold text-white">
-                          {course.displayName || course.name.toUpperCase()}
-                        </p>
-                        <p className="text-sm text-indigo-100">
-                          {courseStats[course.name] || 0} Students
-                        </p>
-                      </div>
-                      {hasCourseDashboardPermission ? (
-                        <ArrowRight size={18} className="text-white/80 group-hover:text-white transition-colors" />
-                      ) : (
-                        <Lock size={18} className="text-white/50" />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <p className="text-indigo-100">No courses configured</p>
-                </div>
+              {hasStudentDashboardPermission && (
+                <button
+                  onClick={() => navigate('/students-dashboard')}
+                  className="text-sm text-white hover:text-indigo-100 font-medium flex items-center gap-1 bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  View Student Dashboard
+                  <ArrowRight size={14} />
+                </button>
               )}
+            </div>
+            <div className="grid grid-cols-1 gap-3">
+              <div className="flex items-center justify-between p-4 bg-white/20 rounded-lg backdrop-blur-sm">
+                <div>
+                  <p className="text-sm text-indigo-100">Total Students</p>
+                  <p className="text-2xl font-bold text-white">{stats.totalStudents.toLocaleString()}</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between p-4 bg-white/20 rounded-lg backdrop-blur-sm">
+                <div>
+                  <p className="text-sm text-indigo-100">Paid Students</p>
+                  <p className="text-2xl font-bold text-white">{stats.paidStudents.toLocaleString()}</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between p-4 bg-white/20 rounded-lg backdrop-blur-sm">
+                <div>
+                  <p className="text-sm text-indigo-100">Pending Students</p>
+                  <p className="text-2xl font-bold text-white">{stats.unpaidStudents.toLocaleString()}</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
