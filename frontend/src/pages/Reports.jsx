@@ -1337,7 +1337,7 @@ const Reports = () => {
           <div className="space-y-6">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="p-4 rounded-xl border border-blue-100 bg-blue-50/60">
+                <div className="p-4 rounded-xl border border-blue-100 bg-blue-200">
                   <div className="flex items-start justify-between">
                     <div>
                       <p className="text-xs uppercase tracking-wide text-blue-500">Students Pending</p>
@@ -1350,7 +1350,7 @@ const Reports = () => {
                   <p className="text-xs text-blue-600 mt-3">Students who still need their mapped items</p>
                 </div>
 
-                <div className="p-4 rounded-xl border border-purple-100 bg-purple-50/60">
+                <div className="p-4 rounded-xl border border-purple-100 bg-purple-200">
                   <div className="flex items-start justify-between">
                     <div>
                       <p className="text-xs uppercase tracking-wide text-purple-500">Outstanding Amount</p>
@@ -1363,7 +1363,7 @@ const Reports = () => {
                   <p className="text-xs text-purple-600 mt-3">{dueStats.totalPendingItems} item{dueStats.totalPendingItems === 1 ? '' : 's'} yet to be issued</p>
                 </div>
 
-                <div className="p-4 rounded-xl border border-amber-100 bg-amber-50/60">
+                <div className="p-4 rounded-xl border border-amber-100 bg-amber-200">
                   <div className="flex items-start justify-between">
                     <div>
                       <p className="text-xs uppercase tracking-wide text-amber-500">Courses Impacted</p>
