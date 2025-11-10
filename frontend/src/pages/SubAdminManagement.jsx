@@ -11,6 +11,8 @@ const SIDEBAR_ITEMS = [
   { path: '/students-dashboard', label: 'Student Dashboard', key: 'course-dashboard' },
   { path: '/manage-stock', label: 'Manage Stock', key: 'manage-stock' },
   { path: '/transactions', label: 'Reports', key: 'transactions' },
+  { path: '/student-due', label: 'Student Due', key: 'student-due' },
+  { path: '/audit-logs', label: 'Audit Logs', key: 'audit-logs' },
   { path: '/settings', label: 'Settings', key: 'settings' },
 ];
 

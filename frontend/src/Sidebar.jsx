@@ -77,7 +77,7 @@ const Sidebar = ({ onLogout, isMobile: isMobileProp, sidebarOpen, setSidebarOpen
       
       {/* Main Sidebar Container */}
       <aside className={`
-        fixed left-0 top-0 h-full bg-black border-r border-slate-600 flex flex-col z-50 shadow-2xl transition-all duration-300
+        sidebar-modern fixed left-0 top-0 h-full bg-black border-r border-slate-600 flex flex-col z-50 shadow-2xl transition-all duration-300
         ${isMobileProp 
           ? `w-60 ${!sidebarOpen ? '-translate-x-full' : 'translate-x-0'}` 
           : `${!sidebarOpen ? 'w-20' : 'w-60'}`
@@ -118,7 +118,7 @@ const Sidebar = ({ onLogout, isMobile: isMobileProp, sidebarOpen, setSidebarOpen
         </div>
 
         {/* Navigation Menu */}
-        <div className="flex-1 py-6 overflow-y-auto">
+        <div className="flex-1 py-6 overflow-y-auto custom-scrollbar">
           <ul className="space-y-2 px-3">
             {menuItems.map((item) => {
               const IconComponent = item.icon;

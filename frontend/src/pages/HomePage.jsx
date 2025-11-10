@@ -3,17 +3,18 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, Shield, Users, Package, BarChart3, Sun, Moon } from 'lucide-react';
 import { apiUrl } from '../utils/api';
 
-const defaultBranding = {
-  header: 'PYDAH COLLEGE OF ENGINEERING',
-  subheader: 'Stationery Management System',
-};
+const fallbackHeader = 'A PYDAHSOFT product';
+const fallbackSubheader = 'Stationery Management System';
 
 const HomePage = () => {
   const [theme, setTheme] = useState(() => {
     if (typeof window === 'undefined') return 'dark';
     return localStorage.getItem('home-theme') || 'dark';
   });
-  const [branding, setBranding] = useState(defaultBranding);
+  const [branding, setBranding] = useState({
+    header: '',
+    subheader: '',
+  });
 
   useEffect(() => {
     localStorage.setItem('home-theme', theme);
@@ -27,9 +28,11 @@ const HomePage = () => {
         if (!res.ok) return;
         const data = await res.json();
         if (!isMounted) return;
+        const header = typeof data.receiptHeader === 'string' ? data.receiptHeader.trim() : '';
+        const subheader = typeof data.receiptSubheader === 'string' ? data.receiptSubheader.trim() : '';
         setBranding({
-          header: data.receiptHeader || defaultBranding.header,
-          subheader: data.receiptSubheader || defaultBranding.subheader,
+          header,
+          subheader,
         });
       } catch (error) {
         console.warn('Failed to load branding settings:', error);
@@ -136,10 +139,14 @@ const HomePage = () => {
             <h1
               className={`text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight mb-6 transition-colors duration-300 ${heroTitleClass}`}
             >
-              <span className={isDark ? 'text-slate-200' : 'text-slate-800'}>{branding.header}</span>
-              <span className="block text-3xl sm:text-4xl font-semibold bg-gradient-to-r from-blue-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent mt-2">
-                {branding.subheader}
+              <span className={isDark ? 'text-slate-200' : 'text-slate-800'}>
+                {branding.header || fallbackHeader}
               </span>
+              {(branding.subheader || fallbackSubheader) && (
+                <span className="block text-3xl sm:text-4xl font-semibold bg-gradient-to-r from-blue-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent mt-2">
+                  {branding.subheader || fallbackSubheader}
+                </span>
+              )}
             </h1>
 
             <p className={`text-lg max-w-2xl leading-relaxed mb-8 transition-colors duration-300 ${heroLeadClass}`}>
