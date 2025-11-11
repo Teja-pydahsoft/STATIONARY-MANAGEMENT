@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Plus, Upload, Search, Users, Edit2, Trash2, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { Upload, Search, Users, Edit2, Trash2, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { apiUrl } from '../utils/api';
 
 const StudentRow = ({
@@ -154,16 +154,14 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
   const [branch, setBranch] = useState('');
   const [config, setConfig] = useState(null);
   const [message, setMessage] = useState('');
-  const [showBulkModal, setShowBulkModal] = useState(false);
-  const [bulkFile, setBulkFile] = useState(null);
-  const [bulkMessage, setBulkMessage] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [editFields, setEditFields] = useState({});
   const [searchTerm, setSearchTerm] = useState('');
   const [courseFilter, setCourseFilter] = useState('all');
   const [yearFilter, setYearFilter] = useState('all');
   const [sqlStudents, setSqlStudents] = useState([]);
-  const [sqlLoading, setSqlLoading] = useState(true);
+  const [sqlLoading, setSqlLoading] = useState(false);
+  const [sqlLoaded, setSqlLoaded] = useState(false);
   const [sqlError, setSqlError] = useState('');
   const [sqlMeta, setSqlMeta] = useState(null);
   const [syncing, setSyncing] = useState(false);
@@ -173,10 +171,11 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
   const [pageSize, setPageSize] = useState(25);
 
   const [viewMode, setViewMode] = useState(VIEW_MODES.mongo);
+  const cancelSqlFetchRef = useRef(false);
 
-  const isSqlDataAvailable = !sqlLoading && !sqlError && Array.isArray(sqlStudents);
-  const isSqlMode = viewMode === VIEW_MODES.sql && isSqlDataAvailable;
-  const dataSource = isSqlMode ? sqlStudents : students;
+  const isSqlActive = viewMode === VIEW_MODES.sql;
+  const dataSource = isSqlActive ? sqlStudents : students;
+  const isSqlMode = isSqlActive;
 
   useEffect(() => {
     (async () => {
@@ -197,40 +196,40 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
   }, []);
 
   useEffect(() => {
-    let ignore = false;
-
-    const fetchSqlStudents = async () => {
-      setSqlLoading(true);
-      setSqlError('');
-      try {
-        const res = await fetch(apiUrl('/api/sql/students'));
-        if (!res.ok) {
-          const errorText = await res.text();
-          throw new Error(errorText || `Failed with status ${res.status}`);
-        }
-        const data = await res.json();
-        if (!ignore) {
-          setSqlStudents(Array.isArray(data?.rows) ? data.rows : []);
-          setSqlMeta({ table: data?.table, count: data?.count });
-        }
-      } catch (error) {
-        if (!ignore) {
-          console.error('Failed to fetch MySQL students:', error);
-          setSqlError(error.message || 'Unable to load external students.');
-        }
-      } finally {
-        if (!ignore) {
-          setSqlLoading(false);
-        }
-      }
-    };
-
-    fetchSqlStudents();
-
+    cancelSqlFetchRef.current = false;
     return () => {
-      ignore = true;
+      cancelSqlFetchRef.current = true;
     };
   }, []);
+
+  const fetchSqlStudents = useCallback(async () => {
+    if (sqlLoading) return;
+    setSqlLoading(true);
+    setSqlError('');
+    try {
+      const res = await fetch(apiUrl('/api/sql/students'));
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(errorText || `Failed with status ${res.status}`);
+      }
+      const data = await res.json();
+      if (!cancelSqlFetchRef.current) {
+        setSqlStudents(Array.isArray(data?.rows) ? data.rows : []);
+        setSqlMeta({ table: data?.table, count: data?.count });
+        setSqlLoaded(true);
+      }
+    } catch (error) {
+      if (!cancelSqlFetchRef.current) {
+        console.error('Failed to fetch MySQL students:', error);
+        setSqlError(error.message || 'Unable to load external students.');
+        setSqlLoaded(false);
+      }
+    } finally {
+      if (!cancelSqlFetchRef.current) {
+        setSqlLoading(false);
+      }
+    }
+  }, [sqlLoading]);
 
   const handleSyncToMongo = async () => {
     if (syncing) return;
@@ -275,6 +274,10 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
 
       if (typeof refreshStudents === 'function') {
         await refreshStudents();
+      }
+
+      if (viewMode === VIEW_MODES.sql) {
+        await fetchSqlStudents();
       }
     } catch (error) {
       setSyncFeedback({
@@ -407,13 +410,18 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
               Stationery Students
             </button>
             <button
-              onClick={() => setViewMode(VIEW_MODES.sql)}
+              onClick={() => {
+                setViewMode(VIEW_MODES.sql);
+                if ((!sqlLoaded || sqlError) && !sqlLoading) {
+                  fetchSqlStudents();
+                }
+              }}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                 viewMode === VIEW_MODES.sql
                   ? 'bg-blue-600 text-white shadow'
                   : 'text-gray-300 hover:text-white hover:bg-gray-800'
               }`}
-              disabled={sqlLoading || (!!sqlError && !isSqlDataAvailable)}
+              disabled={sqlLoading}
             >
               External SQL Students
             </button>
@@ -428,24 +436,7 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
               <Upload size={16} className={syncing ? 'animate-spin' : ''} />
               {syncing ? 'Syncing…' : 'Sync to Stationery DB'}
             </button>
-          ) : (
-            <>
-              {/* <button
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                onClick={() => setShowAddModal(true)}
-              >
-                <Plus size={16} />
-                Add Student
-              </button>
-              <button
-                className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                onClick={() => setShowBulkModal(true)}
-              >
-                <Upload size={16} />
-                Bulk Upload
-              </button> */}
-            </>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -644,65 +635,6 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
               Next
               <ChevronRight size={16} />
             </button>
-          </div>
-        </div>
-      )}
-
-      {/* Bulk Upload Modal */}
-      {showBulkModal && viewMode === VIEW_MODES.mongo && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={() => setShowBulkModal(false)}>
-          <div className="bg-white rounded-xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Bulk Add Students</h3>
-              <button onClick={() => setShowBulkModal(false)} className="text-gray-400 hover:text-gray-600">
-                <X size={20} />
-              </button>
-            </div>
-            <p className="text-gray-600 mb-4">Upload an Excel (.xlsx or .csv) file with columns: name, studentId, course, year, branch</p>
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 mb-4">
-              <input
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                className="w-full"
-                onChange={e => { setBulkFile(e.target.files && e.target.files[0]); setBulkMessage(''); }}
-              />
-            </div>
-            <div className="flex justify-end gap-3">
-              <button
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                onClick={async () => {
-                  if (!bulkFile) { setBulkMessage('Please select a file'); return; }
-                  try {
-                    setBulkMessage('Uploading...');
-                    const fd = new FormData();
-                    fd.append('file', bulkFile);
-                    const importCourse = courseFilter !== 'all' ? courseFilter : (config?.courses?.[0]?.name || '');
-                    const res = await fetch(apiUrl(`/api/users/import/${importCourse}`), { method: 'POST', body: fd });
-                    if (!res.ok) throw new Error('Upload failed');
-                    const data = await res.json();
-                    if (data && Array.isArray(data.imported)) {
-                      setStudents(prev => [...(prev||[]), ...data.imported]);
-                      setBulkMessage(`Imported ${data.imported.length} students`);
-                      setBulkFile(null);
-                    } else {
-                      setBulkMessage('Import finished but no students returned');
-                    }
-                  } catch (err) {
-                    console.error('Bulk upload failed', err);
-                    setBulkMessage('Bulk upload failed: ' + (err.message || ''));
-                  }
-                }}
-              >
-                Upload
-              </button>
-              <button
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                onClick={() => { setShowBulkModal(false); setBulkFile(null); setBulkMessage(''); }}
-              >
-                Cancel
-              </button>
-            </div>
-            {bulkMessage && <div className="mt-3 text-sm text-gray-600">{bulkMessage}</div>}
           </div>
         </div>
       )}

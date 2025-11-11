@@ -1,25 +1,25 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Menu } from 'lucide-react';
-import Sidebar from './Sidebar';
-import Dashboard from './pages/Dashboard';
-import StudentDetail from './pages/StudentDetail';
-import StudentDashboard from './pages/StudentDashboard';
-import AddStudent from './pages/AddStudent';
-import StudentManagement from './pages/StudentManagement';
-import Login from './pages/Login';
-import SubAdminManagement from './pages/SubAdminManagement';
-import ManageStock from './pages/ManageStock';
-import HomePage from './pages/HomePage';
-import CourseManagement from './pages/CourseManagement';
-import Reports from './pages/Reports';
-import Settings from './pages/Settings';
+const Sidebar = lazy(() => import('./Sidebar'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const StudentDetail = lazy(() => import('./pages/StudentDetail'));
+const StudentDashboard = lazy(() => import('./pages/StudentDashboard'));
+const AddStudent = lazy(() => import('./pages/AddStudent'));
+const StudentManagement = lazy(() => import('./pages/StudentManagement'));
+const Login = lazy(() => import('./pages/Login'));
+const SubAdminManagement = lazy(() => import('./pages/SubAdminManagement'));
+const ManageStock = lazy(() => import('./pages/ManageStock'));
+const HomePage = lazy(() => import('./pages/HomePage'));
+const CourseManagement = lazy(() => import('./pages/CourseManagement'));
+const Reports = lazy(() => import('./pages/Reports'));
+const Settings = lazy(() => import('./pages/Settings'));
+const StudentDue = lazy(() => import('./pages/StudentDue.jsx'));
+const AuditLogs = lazy(() => import('./pages/AuditLogs.jsx'));
 import ProtectedRoute from './components/ProtectedRoute';
 import { apiUrl } from './utils/api';
 import useOnlineStatus from './hooks/useOnlineStatus';
 import { loadJSON, saveJSON } from './utils/storage';
-import StudentDue from './pages/StudentDue.jsx';
-import AuditLogs from './pages/AuditLogs.jsx';
 
 const resolveDefaultPath = (user) => {
   if (!user) return '/login';
@@ -55,7 +55,6 @@ const DefaultRoute = ({ currentUser }) => {
 
   return <Dashboard />;
 };
-// import StudentReceiptModal from './pages/StudentReceipt.jsx'; // Not used
 
 function App() {
   const [students, setStudents] = useState(() => loadJSON('studentsCache', []));
@@ -358,6 +357,7 @@ function App() {
   };
 
   return (
+  <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-gray-50 text-gray-600">Loading application…</div>}>
     <div className={`min-h-screen bg-gray-50 ${!isOnline ? 'pt-16' : ''}`}>
       {!isOnline && (
         <div className="fixed top-2 left-0 right-0 z-[60] flex justify-center px-4 pointer-events-none">
@@ -495,10 +495,6 @@ function App() {
                     </ProtectedRoute>
                   } 
                 />
-                {/* <Route
-                  path="/student-receipt"
-                  element={<Navigate to="/" />} // This route is no longer needed
-                /> */}
                 <Route 
                   path="/settings" 
                   element={
@@ -521,6 +517,7 @@ function App() {
         </Routes>
       )}
     </div>
+  </Suspense>
   );
 }
 
