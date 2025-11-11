@@ -438,7 +438,12 @@ function App() {
                   path="/student-management"
                   element={
                     <ProtectedRoute currentUser={currentUser} requiredPermission="student-management">
-                      <StudentManagement students={students} setStudents={setStudents} addStudent={addStudent} />
+                      <StudentManagement
+                        students={students}
+                        setStudents={setStudents}
+                        addStudent={addStudent}
+                        refreshStudents={fetchStudentsData}
+                      />
                     </ProtectedRoute>
                   }
                 />

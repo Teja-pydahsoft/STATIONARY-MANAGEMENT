@@ -1,9 +1,20 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Upload, Search, Users, Edit2, Trash2, X } from 'lucide-react';
+import { Plus, Upload, Search, Users, Edit2, Trash2, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { apiUrl } from '../utils/api';
 
-const StudentRow = ({ student, editingId, editFields, setEditFields, startEdit, saveEdit, cancelEdit, deleteStudent }) => {
-  const isEditing = editingId === student.id;
+const StudentRow = ({
+  student,
+  editingId,
+  editFields,
+  setEditFields,
+  startEdit,
+  saveEdit,
+  cancelEdit,
+  deleteStudent,
+  isSqlMode,
+}) => {
+  const isEditing = !isSqlMode && editingId === student.id;
+  const studentInitial = String(student.name || '?').charAt(0).toUpperCase();
 
   if (isEditing) {
     return (
@@ -73,7 +84,7 @@ const StudentRow = ({ student, editingId, editFields, setEditFields, startEdit, 
       <td className="px-6 py-4 whitespace-nowrap">
         <div className="flex items-center">
           <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-semibold text-sm mr-3">
-            {student.name.charAt(0).toUpperCase()}
+            {studentInitial}
           </div>
           <span className="font-medium text-gray-900">{student.name}</span>
         </div>
@@ -90,35 +101,51 @@ const StudentRow = ({ student, editingId, editFields, setEditFields, startEdit, 
       </td>
       <td className="px-6 py-4 whitespace-nowrap">
         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-          Year {student.year}
+          {student.year ? `Year ${student.year}` : 'Year N/A'}
+        </span>
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap">
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+          {student.semester ? `Sem ${student.semester}` : 'Sem N/A'}
         </span>
       </td>
       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
         {student.branch || 'N/A'}
       </td>
       <td className="px-6 py-4 whitespace-nowrap">
-        <div className="flex gap-2">
-          <button
-            className="flex items-center gap-1 px-3 py-1 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-            onClick={() => startEdit(student)}
-          >
-            <Edit2 size={14} />
-            Edit
-          </button>
-          <button
-            className="flex items-center gap-1 px-3 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
-            onClick={() => deleteStudent(student)}
-          >
-            <Trash2 size={14} />
-            Delete
-          </button>
-        </div>
+        {isSqlMode ? (
+          <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-lg">
+            Read only
+          </span>
+        ) : (
+          <div className="flex gap-2">
+            <button
+              className="flex items-center gap-1 px-3 py-1 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+              onClick={() => startEdit(student)}
+            >
+              <Edit2 size={14} />
+              Edit
+            </button>
+            <button
+              className="flex items-center gap-1 px-3 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+              onClick={() => deleteStudent(student)}
+            >
+              <Trash2 size={14} />
+              Delete
+            </button>
+          </div>
+        )}
       </td>
     </tr>
   );
 };
 
-const StudentManagement = ({ students = [], setStudents, addStudent }) => {
+const VIEW_MODES = {
+  mongo: 'mongo',
+  sql: 'sql',
+};
+
+const StudentManagement = ({ students = [], setStudents, addStudent, refreshStudents }) => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [name, setName] = useState('');
   const [studentId, setStudentId] = useState('');
@@ -135,6 +162,21 @@ const StudentManagement = ({ students = [], setStudents, addStudent }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [courseFilter, setCourseFilter] = useState('all');
   const [yearFilter, setYearFilter] = useState('all');
+  const [sqlStudents, setSqlStudents] = useState([]);
+  const [sqlLoading, setSqlLoading] = useState(true);
+  const [sqlError, setSqlError] = useState('');
+  const [sqlMeta, setSqlMeta] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncFeedback, setSyncFeedback] = useState(null);
+  const [syncStats, setSyncStats] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  const [viewMode, setViewMode] = useState(VIEW_MODES.mongo);
+
+  const isSqlDataAvailable = !sqlLoading && !sqlError && Array.isArray(sqlStudents);
+  const isSqlMode = viewMode === VIEW_MODES.sql && isSqlDataAvailable;
+  const dataSource = isSqlMode ? sqlStudents : students;
 
   useEffect(() => {
     (async () => {
@@ -154,8 +196,99 @@ const StudentManagement = ({ students = [], setStudents, addStudent }) => {
     })();
   }, []);
 
+  useEffect(() => {
+    let ignore = false;
+
+    const fetchSqlStudents = async () => {
+      setSqlLoading(true);
+      setSqlError('');
+      try {
+        const res = await fetch(apiUrl('/api/sql/students'));
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(errorText || `Failed with status ${res.status}`);
+        }
+        const data = await res.json();
+        if (!ignore) {
+          setSqlStudents(Array.isArray(data?.rows) ? data.rows : []);
+          setSqlMeta({ table: data?.table, count: data?.count });
+        }
+      } catch (error) {
+        if (!ignore) {
+          console.error('Failed to fetch MySQL students:', error);
+          setSqlError(error.message || 'Unable to load external students.');
+        }
+      } finally {
+        if (!ignore) {
+          setSqlLoading(false);
+        }
+      }
+    };
+
+    fetchSqlStudents();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  const handleSyncToMongo = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    setSyncFeedback(null);
+    setSyncStats(null);
+    try {
+      const res = await fetch(apiUrl('/api/sql/students/sync'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        const message = data?.message || res.statusText || 'Failed to sync students.';
+        throw new Error(message);
+      }
+
+      const {
+        inserted = 0,
+        updated = 0,
+        skipped = 0,
+        total = 0,
+        errors = [],
+        message = 'Sync complete.',
+      } = data || {};
+
+      setSyncFeedback({
+        type: 'success',
+        message: `${message}`,
+      });
+      setSyncStats({
+        inserted,
+        updated,
+        skipped,
+        total,
+        table: data?.table,
+        errors: errors?.length || 0,
+        timestamp: new Date().toISOString(),
+      });
+
+      if (typeof refreshStudents === 'function') {
+        await refreshStudents();
+      }
+    } catch (error) {
+      setSyncFeedback({
+        type: 'error',
+        message: error.message || 'Unable to sync students from MySQL.',
+      });
+      setSyncStats(null);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const filteredStudents = useMemo(() => {
-    return (students || []).filter(student => {
+    return (dataSource || []).filter(student => {
       const term = (searchTerm || '').toLowerCase();
       if (term) {
         const nameMatch = String(student.name || '').toLowerCase().includes(term);
@@ -166,10 +299,25 @@ const StudentManagement = ({ students = [], setStudents, addStudent }) => {
       if (yearFilter !== 'all' && String(student.year) !== String(yearFilter)) return false;
       return true;
     });
-  }, [students, searchTerm, courseFilter, yearFilter]);
+  }, [dataSource, searchTerm, courseFilter, yearFilter]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, courseFilter, yearFilter, viewMode, dataSource.length]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredStudents.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedStudents = useMemo(() => {
+    const startIndex = (safeCurrentPage - 1) * pageSize;
+    return filteredStudents.slice(startIndex, startIndex + pageSize);
+  }, [filteredStudents, safeCurrentPage, pageSize]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSqlMode) {
+      setMessage('Adding students is disabled while viewing external database records.');
+      return;
+    }
     if (!name || !studentId || !course || !year) {
       setMessage('All fields are required.');
       return;
@@ -184,13 +332,18 @@ const StudentManagement = ({ students = [], setStudents, addStudent }) => {
   };
 
   const startEdit = (s) => {
+    if (isSqlMode) return;
     setEditingId(s.id);
     setEditFields({ name: s.name, studentId: s.studentId, course: s.course, year: s.year, branch: s.branch });
   };
 
-  const cancelEdit = () => { setEditingId(null); setEditFields({}); };
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditFields({});
+  };
 
   const saveEdit = async (id) => {
+    if (isSqlMode) return;
     try {
       const original = (students || []).find(s => s.id === id);
       const courseParam = String(original?.course || editFields.course || '').toLowerCase();
@@ -215,6 +368,7 @@ const StudentManagement = ({ students = [], setStudents, addStudent }) => {
   };
 
   const deleteStudent = async (student) => {
+    if (isSqlMode) return;
     const { id, course } = student;
     try {
       const courseParam = String(course || '').toLowerCase();
@@ -240,23 +394,118 @@ const StudentManagement = ({ students = [], setStudents, addStudent }) => {
             <p className="text-gray-600">Manage all student records and information</p>
           </div>
         </div>
-        <div className="flex gap-3">
-          <button
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            onClick={() => setShowAddModal(true)}
-          >
-            <Plus size={16} />
-            Add Student
-          </button>
-          <button
-            className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-            onClick={() => setShowBulkModal(true)}
-          >
-            <Upload size={16} />
-            Bulk Upload
-          </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="bg-gray-900 text-gray-100 rounded-xl px-1 py-1 flex items-center">
+            <button
+              onClick={() => setViewMode(VIEW_MODES.mongo)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                viewMode === VIEW_MODES.mongo
+                  ? 'bg-blue-600 text-white shadow'
+                  : 'text-gray-300 hover:text-white hover:bg-gray-800'
+              }`}
+            >
+              Stationery Students
+            </button>
+            <button
+              onClick={() => setViewMode(VIEW_MODES.sql)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                viewMode === VIEW_MODES.sql
+                  ? 'bg-blue-600 text-white shadow'
+                  : 'text-gray-300 hover:text-white hover:bg-gray-800'
+              }`}
+              disabled={sqlLoading || (!!sqlError && !isSqlDataAvailable)}
+            >
+              External SQL Students
+            </button>
+          </div>
+
+          {isSqlMode ? (
+            <button
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              onClick={handleSyncToMongo}
+              disabled={syncing}
+            >
+              <Upload size={16} className={syncing ? 'animate-spin' : ''} />
+              {syncing ? 'Syncing…' : 'Sync to Stationery DB'}
+            </button>
+          ) : (
+            <>
+              {/* <button
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                onClick={() => setShowAddModal(true)}
+              >
+                <Plus size={16} />
+                Add Student
+              </button>
+              <button
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                onClick={() => setShowBulkModal(true)}
+              >
+                <Upload size={16} />
+                Bulk Upload
+              </button> */}
+            </>
+          )}
         </div>
       </div>
+
+      {viewMode === VIEW_MODES.sql && (
+        <div className="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-900">
+          <h3 className="text-base font-semibold mb-1">Read-only view from MySQL</h3>
+          <p>
+            Showing {sqlMeta?.count ?? sqlStudents.length} records from table{' '}
+            <span className="font-medium">{sqlMeta?.table ?? 'students'}</span> in the configured MySQL
+            database. Editing, adding, or deleting is disabled in this mode.
+          </p>
+        </div>
+      )}
+
+      {syncFeedback && (
+        <div
+          className={`mb-6 rounded-xl border p-4 text-sm ${
+            syncFeedback.type === 'success'
+              ? 'bg-green-50 border-green-200 text-green-800'
+              : 'bg-red-50 border-red-200 text-red-700'
+          }`}
+        >
+          {syncFeedback.message}
+        </div>
+      )}
+
+      {syncStats && (
+        <div className="mb-6 grid gap-4 md:grid-cols-4">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+            <h4 className="text-sm font-medium text-gray-500 uppercase tracking-wider">Processed</h4>
+            <p className="text-2xl font-semibold text-gray-900 mt-1">{syncStats.total}</p>
+            <p className="text-xs text-gray-400 mt-1">Table: {syncStats.table || 'students'}</p>
+          </div>
+          <div className="bg-white rounded-xl border border-green-200 shadow-sm p-4">
+            <h4 className="text-sm font-medium text-green-600 uppercase tracking-wider">Inserted</h4>
+            <p className="text-2xl font-semibold text-green-700 mt-1">{syncStats.inserted}</p>
+          </div>
+          <div className="bg-white rounded-xl border border-blue-200 shadow-sm p-4">
+            <h4 className="text-sm font-medium text-blue-600 uppercase tracking-wider">Updated</h4>
+            <p className="text-2xl font-semibold text-blue-700 mt-1">{syncStats.updated}</p>
+          </div>
+          <div className="bg-white rounded-xl border border-yellow-200 shadow-sm p-4">
+            <h4 className="text-sm font-medium text-yellow-600 uppercase tracking-wider">Skipped</h4>
+            <p className="text-2xl font-semibold text-yellow-700 mt-1">
+              {syncStats.skipped}
+              {syncStats.errors ? ` (${syncStats.errors} issues)` : ''}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              {syncStats.timestamp ? `Updated ${new Date(syncStats.timestamp).toLocaleString()}` : ''}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {viewMode === VIEW_MODES.sql && sqlError && (
+        <div className="mb-6 bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm">
+          <h3 className="text-base font-semibold mb-1">Could not load MySQL records</h3>
+          <p>{sqlError}</p>
+        </div>
+      )}
 
       {/* Filters Section */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6 shadow-sm">
@@ -278,7 +527,7 @@ const StudentManagement = ({ students = [], setStudents, addStudent }) => {
               className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="all">All Courses</option>
-              {Array.from(new Set((students || []).map(s => s.course).filter(Boolean))).map(c => (
+              {Array.from(new Set((dataSource || []).map(s => s.course).filter(Boolean))).map(c => (
                 <option key={c} value={c}>{c.toUpperCase()}</option>
               ))}
             </select>
@@ -288,7 +537,7 @@ const StudentManagement = ({ students = [], setStudents, addStudent }) => {
               className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="all">All Years</option>
-              {Array.from(new Set((students || []).map(s => String(s.year)).filter(Boolean))).sort().map(y => (
+              {Array.from(new Set((dataSource || []).map(s => String(s.year)).filter(Boolean))).sort().map(y => (
                 <option key={y} value={y}>Year {y}</option>
               ))}
             </select>
@@ -299,11 +548,37 @@ const StudentManagement = ({ students = [], setStudents, addStudent }) => {
       {/* Students Table */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <h3 className="text-lg font-semibold text-gray-900">All Students</h3>
-            <span className="text-sm text-gray-600 bg-gray-100 px-2 py-1 rounded-full">
-              {filteredStudents.length} students
-            </span>
+            <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
+              <span className="bg-gray-100 px-2 py-1 rounded-full">{filteredStudents.length} students</span>
+              {filteredStudents.length > 0 && (
+                <>
+                  <div className="flex items-center gap-2">
+                    <span>Rows per page:</span>
+                    <select
+                      className="border border-gray-300 rounded-lg px-2 py-1 text-sm"
+                      value={pageSize}
+                      onChange={(e) => {
+                        const value = Number(e.target.value);
+                        setPageSize(value);
+                        setCurrentPage(1);
+                      }}
+                    >
+                      {[10, 25, 50, 100].map(size => (
+                        <option key={size} value={size}>
+                          {size}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <span>
+                    Showing {(safeCurrentPage - 1) * pageSize + 1}-
+                    {Math.min(filteredStudents.length, safeCurrentPage * pageSize)} of {filteredStudents.length}
+                  </span>
+                </>
+              )}
+            </div>
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -314,12 +589,13 @@ const StudentManagement = ({ students = [], setStudents, addStudent }) => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student ID</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Course</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Year</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Semester</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Branch</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredStudents.map(s => (
+              {paginatedStudents.map(s => (
                 <StudentRow
                   key={s.id}
                   student={s}
@@ -330,15 +606,50 @@ const StudentManagement = ({ students = [], setStudents, addStudent }) => {
                   saveEdit={saveEdit}
                   cancelEdit={cancelEdit}
                   deleteStudent={deleteStudent}
+                  isSqlMode={isSqlMode}
                 />
               ))}
             </tbody>
           </table>
+          {viewMode === VIEW_MODES.sql && sqlLoading && (
+            <div className="py-10 text-center text-sm text-gray-500">Loading students from MySQL…</div>
+          )}
+          {!sqlLoading && filteredStudents.length === 0 && (
+            <div className="py-10 text-center text-sm text-gray-500">
+              No students match the current filters.
+            </div>
+          )}
         </div>
       </div>
 
+      {filteredStudents.length > 0 && (
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mt-6">
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <button
+              className="flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={safeCurrentPage <= 1}
+            >
+              <ChevronLeft size={16} />
+              Previous
+            </button>
+            <span className="text-sm text-gray-600">
+              Page {safeCurrentPage} of {totalPages}
+            </span>
+            <button
+              className="flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={safeCurrentPage >= totalPages}
+            >
+              Next
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Bulk Upload Modal */}
-      {showBulkModal && (
+      {showBulkModal && viewMode === VIEW_MODES.mongo && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={() => setShowBulkModal(false)}>
           <div className="bg-white rounded-xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
@@ -397,7 +708,7 @@ const StudentManagement = ({ students = [], setStudents, addStudent }) => {
       )}
 
       {/* Add Student Modal */}
-      {showAddModal && (
+      {showAddModal && viewMode === VIEW_MODES.mongo && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={() => setShowAddModal(false)}>
           <div className="bg-white rounded-xl max-w-2xl w-full p-6" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">

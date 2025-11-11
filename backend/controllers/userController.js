@@ -7,7 +7,7 @@ const asyncHandler = require('express-async-handler');
  * @access  Public
  */
 const registerUser = asyncHandler(async (req, res) => {
-  const { name, email, password, studentId, course, year, branch } = req.body;
+  const { name, email, password, studentId, course, year, branch, semester } = req.body;
 
   if (!course) {
     res.status(400);
@@ -39,6 +39,7 @@ const registerUser = asyncHandler(async (req, res) => {
       course,
       year,
       branch,
+      semester,
     });
 
   if (user) {
@@ -51,6 +52,7 @@ const registerUser = asyncHandler(async (req, res) => {
       course: user.course,
       year: user.year,
       branch: user.branch,
+      semester: user.semester,
       items: user.items,
       paid: user.paid,
     }});
@@ -94,7 +96,7 @@ const getAllUsers = asyncHandler(async (req, res) => {
  */
 const updateUser = asyncHandler(async (req, res) => {
   const { course, id } = req.params;
-  const { items, paid, name, studentId, year, branch } = req.body;
+  const { items, paid, name, studentId, year, branch, semester } = req.body;
   
   if (!course) {
     res.status(400);
@@ -115,6 +117,7 @@ const updateUser = asyncHandler(async (req, res) => {
   if (studentId !== undefined) user.studentId = studentId;
   if (year !== undefined) user.year = year;
   if (branch !== undefined) user.branch = branch;
+  if (semester !== undefined) user.semester = semester;
 
   const updated = await user.save();
   res.json({ 
@@ -124,6 +127,7 @@ const updateUser = asyncHandler(async (req, res) => {
     course: updated.course, 
     year: updated.year, 
     branch: updated.branch, 
+    semester: updated.semester,
     items: updated.items, 
     paid: updated.paid 
   });

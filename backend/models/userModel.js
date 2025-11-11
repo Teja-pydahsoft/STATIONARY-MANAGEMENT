@@ -9,6 +9,11 @@ const userSchema = new mongoose.Schema(
       required: [true, 'Please provide your name'],
       trim: true,
     },
+    semester: {
+      type: Number,
+      min: 1,
+      default: null,
+    },
     email: {
       type: String,
       required: [true, 'Please provide your email'],
@@ -40,11 +45,6 @@ const userSchema = new mongoose.Schema(
       type: Number,
       required: [true, 'Please provide your year of study'],
       min: [1, 'Year must be at least 1'],
-    },
-    orders: {
-      type: [mongoose.Schema.Types.ObjectId],
-      ref: 'Order',
-      default: [],
     },
     // Items assigned to a student (key-value map of itemCategory -> boolean)
     items: {
