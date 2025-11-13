@@ -449,10 +449,10 @@ const StudentDetail = ({
         </header>
 
         {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)] gap-2">
           {/* Left Sidebar - Student Info */}
           <aside className="bg-white rounded-2xl border border-blue-100 shadow-lg">
-            <div className="px-6 py-5 border-b border-blue-50 flex items-center gap-3">
+            <div className="px-6 py-5 border-b border-blue-50 flex items-center gap-2">
               <div className="w-12 h-12 rounded-full bg-blue-600 text-white flex items-center justify-center text-lg font-semibold overflow-hidden border border-blue-200 shadow-sm">
                 {avatarUrl && !avatarFailed ? (
                   <img
