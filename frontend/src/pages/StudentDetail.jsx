@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, User, Package, Receipt, History, Calendar, DollarSign, Printer, Lock } from 'lucide-react';
+import { ArrowLeft, User, Package, Receipt, History, Calendar, DollarSign, Printer, Lock, Loader2 } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import StudentReceiptModal from './StudentReceipt.jsx';
 import { apiUrl } from '../utils/api';
@@ -23,6 +23,8 @@ const StudentDetail = ({
   const [prefillProducts, setPrefillProducts] = useState([]);
   const [transactionMode, setTransactionMode] = useState('mapped');
   const [avatarFailed, setAvatarFailed] = useState(false);
+  const [componentUpdating, setComponentUpdating] = useState('');
+  const [componentUpdateStatus, setComponentUpdateStatus] = useState({ type: '', message: '' });
 
   const normalizeCourse = (value) => {
     if (!value) return '';
@@ -47,7 +49,7 @@ const StudentDetail = ({
     setAvatarFailed(false);
   }, [id, students]);
 
-  const fetchStudentTransactions = async () => {
+  const fetchStudentTransactions = useCallback(async () => {
     if (!student || (!student.id && !student._id)) return;
 
     try {
@@ -63,14 +65,11 @@ const StudentDetail = ({
     } finally {
       setLoadingTransactions(false);
     }
-  };
+  }, [student]);
 
   useEffect(() => {
-    if (student && (student.id || student._id)) {
-      fetchStudentTransactions();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [student?.id, student?._id]);
+    fetchStudentTransactions();
+  }, [fetchStudentTransactions]);
 
   const currentStudentId = student ? String(student.id || student._id || '') : '';
 
@@ -78,8 +77,13 @@ const StudentDetail = ({
     if (isOnline) {
       fetchStudentTransactions();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOnline]);
+  }, [isOnline, fetchStudentTransactions]);
+
+  useEffect(() => {
+    if (!componentUpdateStatus.message) return;
+    const timer = setTimeout(() => setComponentUpdateStatus({ type: '', message: '' }), 4000);
+    return () => clearTimeout(timer);
+  }, [componentUpdateStatus]);
 
   // derive visible items for this student's course/year
   const studentCourseNormalized = normalizeCourse(student?.course);
@@ -126,22 +130,64 @@ const StudentDetail = ({
           item.productId ||
           item?._id;
         const product = productMap.get(String(productId));
-        const setComponents =
-          product && product.isSet
-            ? (product.setItems || []).map((setItem) => ({
-                name:
-                  setItem?.product?.name ||
-                  setItem?.productNameSnapshot ||
-                  'Unknown item',
-                quantity: Number(setItem?.quantity) || 1,
-              }))
-            : Array.isArray(item.setComponents)
-            ? item.setComponents
-            : [];
+        let setComponents = Array.isArray(item.setComponents) ? item.setComponents : [];
+
+        if (product?.isSet) {
+          if (setComponents.length > 0) {
+            const productComponentMap = new Map(
+              (product.setItems || []).map((setItem) => {
+                const compId =
+                  setItem?.product?._id ||
+                  setItem?.productId ||
+                  setItem?.product?._id?.toString?.() ||
+                  null;
+                return [
+                  compId ? String(compId) : null,
+                  {
+                    name:
+                      setItem?.product?.name ||
+                      setItem?.productNameSnapshot ||
+                      'Unknown item',
+                    quantity: Number(setItem?.quantity) || 1,
+                  },
+                ];
+              })
+            );
+
+            setComponents = setComponents.map((component) => {
+              const componentId = String(component.productId || component._id || '');
+              const fallback = productComponentMap.get(componentId) || {};
+              return {
+                ...component,
+                productId: component.productId || component._id || null,
+                name: component.name || fallback.name || 'Unknown item',
+                quantity: Number(component.quantity) || Number(fallback.quantity) || 1,
+                taken: component.taken !== undefined ? component.taken : true,
+                reason: component.reason || '',
+              };
+            });
+          } else {
+            setComponents = (product.setItems || []).map((setItem) => ({
+              productId:
+                setItem?.product?._id ||
+                setItem?.productId ||
+                setItem?.product?._id?.toString?.() ||
+                null,
+              name:
+                setItem?.product?.name ||
+                setItem?.productNameSnapshot ||
+                'Unknown item',
+              quantity: Number(setItem?.quantity) || 1,
+              taken: true,
+              reason: '',
+            }));
+          }
+        }
 
         return {
           ...item,
           isSet: Boolean(product?.isSet || item.isSet),
+          status: item.status || 'fulfilled',
           setComponents,
         };
       }),
@@ -154,6 +200,104 @@ const StudentDetail = ({
       items: enrichItems(transaction?.items || []),
     }),
     [enrichItems]
+  );
+
+  const handleMarkComponentTaken = useCallback(
+    async (transaction, item, component) => {
+      if (!isOnline) {
+        setComponentUpdateStatus({
+          type: 'error',
+          message: 'Re-connect to the network before marking items as taken.',
+        });
+        return;
+      }
+
+      const normalizeId = (value) => {
+        if (!value) return '';
+        if (typeof value === 'string') return value;
+        if (value._id) return String(value._id);
+        if (value.id) return String(value.id);
+        if (typeof value === 'object' && value.toString) return value.toString();
+        return String(value);
+      };
+
+      const transactionId = transaction._id || transaction.id;
+      const itemProductId = normalizeId(item.productId || item._id);
+      const targetComponentId = normalizeId(component.productId || component._id);
+
+      if (!transactionId || !itemProductId || !targetComponentId) {
+        setComponentUpdateStatus({
+          type: 'error',
+          message: 'Unable to determine component identifiers for this transaction.',
+        });
+        return;
+      }
+
+      const updateKey = `${transactionId}:${itemProductId}:${targetComponentId}`;
+      setComponentUpdating(updateKey);
+      setComponentUpdateStatus({ type: '', message: '' });
+
+      try {
+        const payloadItems = transaction.items.map((txItem) => {
+          const txItemProductId = normalizeId(txItem.productId || txItem._id);
+          const baseItem = {
+            productId: txItemProductId,
+            quantity: Number(txItem.quantity) || 0,
+            price: Number(txItem.price) || 0,
+            name: txItem.name,
+          };
+
+          if (txItem.isSet) {
+            baseItem.setComponents = (txItem.setComponents || []).map((comp) => {
+              const compId = normalizeId(comp.productId || comp._id || comp.id);
+              const isTarget =
+                txItemProductId === itemProductId && compId && compId === targetComponentId;
+              return {
+                productId: compId || undefined,
+                name: comp.name,
+                quantity: Number(comp.quantity) || 1,
+                taken: isTarget ? true : comp.taken !== undefined ? comp.taken : true,
+                reason: isTarget ? '' : comp.reason || '',
+              };
+            });
+          }
+
+          return baseItem;
+        });
+
+        const response = await fetch(apiUrl(`/api/transactions/${transactionId}`), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            items: payloadItems,
+            paymentMethod: transaction.paymentMethod || 'cash',
+            isPaid: Boolean(transaction.isPaid),
+            remarks: transaction.remarks || '',
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || 'Failed to update transaction.');
+        }
+
+        await fetchStudentTransactions();
+        await refreshProducts();
+        setComponentUpdateStatus({
+          type: 'success',
+          message: `${component.name} marked as taken successfully.`,
+        });
+      } catch (error) {
+        console.error('Failed to mark component as taken:', error);
+        setComponentUpdateStatus({
+          type: 'error',
+          message: error.message || 'Unable to mark component as taken.',
+        });
+      } finally {
+        setComponentUpdating('');
+      }
+    },
+    [isOnline, fetchStudentTransactions, refreshProducts]
   );
 
   const transactions = useMemo(
@@ -470,6 +614,18 @@ const StudentDetail = ({
                 )}
               </div>
 
+              {componentUpdateStatus.message && (
+                <div
+                  className={`mb-4 text-xs font-semibold rounded-lg px-3 py-2 border ${
+                    componentUpdateStatus.type === 'success'
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-rose-50 text-rose-700 border-rose-200'
+                  }`}
+                >
+                  {componentUpdateStatus.message}
+                </div>
+              )}
+
               {loadingTransactions ? (
                 <div className="flex items-center justify-center py-12">
                   <div className="w-5 h-5 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
@@ -559,34 +715,104 @@ const StudentDetail = ({
                             {/* Transaction Items - Collapsible or compact view */}
                             {transaction.items && transaction.items.length > 0 && (
                               <div className="mt-2 pt-2 border-t border-blue-100 space-y-2">
-                                {transaction.items.map((item, idx) => (
-                                  <div key={idx} className="text-xs text-blue-800 bg-white/70 border border-blue-100 rounded-lg px-3 py-2">
+                                {transaction.items.map((item, idx) => {
+                                  const itemProductKey = String(
+                                    item.productId?._id ||
+                                      item.productId ||
+                                      item._id ||
+                                      ''
+                                  );
+                                  return (
+                                    <div
+                                      key={idx}
+                                      className="text-xs text-gray-800 bg-white/70 border border-blue-100 rounded-lg px-3 py-2"
+                                    >
                                     <div className="flex items-center justify-between">
                                       <div className="font-medium">{item.name}</div>
                                       <div className="font-semibold">
                                         ×{item.quantity} • ₹{Number(item.total).toFixed(2)}
                                       </div>
                                     </div>
+                                    {(item.isSet || item.status === 'partial') && (
+                                      <div className="flex items-center justify-between mt-1 text-[11px]">
+                                        <span className="text-gray-600 font-medium">
+                                          Status:
+                                          <span
+                                            className={`ml-1 font-semibold ${
+                                              item.status === 'partial' ? 'text-amber-600' : 'text-green-600'
+                                            }`}
+                                          >
+                                            {item.status === 'partial' ? 'Partial' : 'Fulfilled'}
+                                          </span>
+                                        </span>
+                                      </div>
+                                    )}
                                     {item.isSet && item.setComponents?.length > 0 && (
                                       <div className="mt-1 border-t border-blue-100 pt-1">
-                                        <p className="text-[11px] font-semibold text-blue-600 mb-1">
+                                        <p className="text-[11px] font-semibold text-gray-800 mb-1">
                                           Includes:
                                         </p>
                                         <ul className="space-y-0.5">
-                                          {item.setComponents.map((component, componentIdx) => (
-                                            <li
-                                              key={`${item.name}-component-inline-${componentIdx}`}
-                                              className="flex justify-between text-[11px] text-blue-700"
-                                            >
-                                              <span className="truncate max-w-[200px]">{component.name}</span>
-                                              <span className="font-semibold">× {component.quantity}</span>
-                                            </li>
-                                          ))}
+                                          {item.setComponents.map((component, componentIdx) => {
+                                            const componentProductKey = String(
+                                              component.productId ||
+                                                component._id ||
+                                                ''
+                                            );
+                                            const actionKey = `${transaction._id || transaction.id}:${itemProductKey}:${componentProductKey}`;
+                                            return (
+                                              <li
+                                                key={`${item.name}-component-inline-${componentIdx}`}
+                                                className="flex items-center justify-between text-[11px] text-gray-700 gap-2"
+                                              >
+                                                <span className="truncate max-w-[200px]">
+                                                  {component.name}
+                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                  <span className="font-semibold">
+                                                    × {component.quantity}
+                                                  </span>
+                                                  {component.taken === false && (
+                                                    <div className="flex items-center gap-2">
+                                                      <span className="uppercase font-semibold text-red-600">
+                                                        Not Taken
+                                                      </span>
+                                                      <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                          handleMarkComponentTaken(
+                                                            transaction,
+                                                            item,
+                                                            component
+                                                          )
+                                                        }
+                                                        disabled={
+                                                          !isOnline ||
+                                                          componentUpdating === actionKey
+                                                        }
+                                                        className="px-2 py-1 rounded-md border border-gray-200 text-gray-700 font-semibold hover:bg-gray-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                                                      >
+                                                        {componentUpdating === actionKey ? (
+                                                          <Loader2
+                                                            size={12}
+                                                            className="animate-spin"
+                                                          />
+                                                        ) : (
+                                                          'Mark as Taken'
+                                                        )}
+                                                      </button>
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              </li>
+                                            );
+                                          })}
                                         </ul>
                                       </div>
                                     )}
-                                  </div>
-                                ))}
+                                    </div>
+                                  );
+                                })}
                               </div>
                             )}
 
@@ -687,12 +913,35 @@ const StudentDetail = ({
                                     <tr key={idx}>
                                       <td>
                                         <span style={{ display: 'block', fontWeight: 600 }}>{item.name}</span>
+                                        {(item.isSet || item.status === 'partial') && (
+                                          <span
+                                            style={{
+                                              display: 'inline-block',
+                                              marginTop: '4px',
+                                              fontSize: '11px',
+                                              fontWeight: 600,
+                                              color: item.status === 'partial' ? '#b45309' : '#047857',
+                                            }}
+                                          >
+                                            {item.status === 'partial' ? 'Partial' : 'Fulfilled'}
+                                          </span>
+                                        )}
                                         {item.isSet && item.setComponents?.length > 0 && (
                                           <ul style={{ margin: '6px 0 0', paddingLeft: '12px', fontSize: '11px', color: '#4b5563' }}>
                                             {item.setComponents.map((component, componentIdx) => (
-                                              <li key={`${item.name}-component-print-${componentIdx}`} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                              <li
+                                                key={`${item.name}-component-print-${componentIdx}`}
+                                                style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}
+                                              >
                                                 <span>{component.name}</span>
-                                                <span style={{ marginLeft: '8px', fontWeight: 600 }}>× {component.quantity}</span>
+                                                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                  <span style={{ fontWeight: 600 }}>× {component.quantity}</span>
+                                                  {component.taken === false && (
+                                                    <span style={{ textTransform: 'uppercase', fontWeight: 700, color: '#dc2626' }}>
+                                                      Not Taken
+                                                    </span>
+                                                  )}
+                                                </span>
                                               </li>
                                             ))}
                                           </ul>

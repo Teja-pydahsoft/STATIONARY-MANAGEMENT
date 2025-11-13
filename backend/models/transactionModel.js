@@ -32,6 +32,24 @@ const transactionSchema = new mongoose.Schema(
         quantity: { type: Number, required: true, min: 1 },
         price: { type: Number, required: true, min: 0 },
         total: { type: Number, required: true, min: 0 },
+        isSet: { type: Boolean, default: false },
+        status: {
+          type: String,
+          enum: ['fulfilled', 'partial'],
+          default: 'fulfilled',
+        },
+        setComponents: [
+          {
+            productId: {
+              type: mongoose.Schema.Types.ObjectId,
+              ref: 'Product',
+            },
+            name: { type: String, required: false, trim: true },
+            quantity: { type: Number, min: 0, default: 0 },
+            taken: { type: Boolean, default: true },
+            reason: { type: String, trim: true, default: '' },
+          },
+        ],
       },
     ],
     totalAmount: {

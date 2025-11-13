@@ -728,9 +728,17 @@ const hasHiddenItems = useMemo(() => {
                                 <p className="text-[10px] font-semibold text-gray-600 mb-1">Includes:</p>
                                 <ul className="space-y-1">
                                   {item.setComponents.map((component, componentIdx) => (
-                                    <li key={`${item.name}-component-list-${componentIdx}`} className="flex justify-between text-[10px] text-gray-600">
+                                    <li
+                                      key={`${item.name}-component-list-${componentIdx}`}
+                                      className="flex items-center justify-between text-[10px] text-gray-600 gap-2"
+                                    >
                                       <span className="truncate max-w-[140px]">{component.name}</span>
-                                      <span className="font-semibold">× {component.quantity}</span>
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-semibold">× {component.quantity}</span>
+                                        {component.taken === false && (
+                                          <span className="uppercase font-semibold text-red-600">Not Taken</span>
+                                        )}
+                                      </div>
                                     </li>
                                   ))}
                                 </ul>

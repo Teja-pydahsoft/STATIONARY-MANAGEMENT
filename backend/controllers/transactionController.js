@@ -127,6 +127,9 @@ const createTransaction = asyncHandler(async (req, res) => {
 
     const requestedQuantity = Number(item.quantity);
 
+    let itemStatus = 'fulfilled';
+    let componentDetails = [];
+
     if (product.isSet) {
       if (!product.setItems || product.setItems.length === 0) {
         res.status(400);
@@ -142,12 +145,26 @@ const createTransaction = asyncHandler(async (req, res) => {
 
         const componentId = component._id.toString();
         const required = requestedQuantity * (Number(setItem.quantity) || 1);
-        if (getProjectedStock(componentId, stockMap, stockChanges) < required) {
-          res.status(400);
-          throw new Error(`Insufficient stock for ${component.name} in set ${product.name}. Required: ${required}, Available: ${component.stock}`);
+        const available = getProjectedStock(componentId, stockMap, stockChanges);
+
+        let taken = true;
+        let reason;
+
+        if (available < required) {
+          taken = false;
+          itemStatus = 'partial';
+          reason = `Insufficient stock at issuance (required ${required}, available ${Math.max(available, 0)})`;
+        } else {
+          accumulateStockChange(stockChanges, componentId, -required);
         }
 
-        accumulateStockChange(stockChanges, componentId, -required);
+        componentDetails.push({
+          productId: component._id,
+          name: component.name,
+          quantity: required,
+          taken,
+          reason: taken ? undefined : reason,
+        });
       }
     } else {
       if (getProjectedStock(productId, stockMap, stockChanges) < requestedQuantity) {
@@ -160,14 +177,21 @@ const createTransaction = asyncHandler(async (req, res) => {
 
     const itemTotal = requestedQuantity * Number(item.price);
     totalAmount += itemTotal;
-
-    validatedItems.push({
+    const transactionItem = {
       productId: item.productId,
       name: item.name || product.name,
       quantity: requestedQuantity,
       price: Number(item.price),
       total: itemTotal,
-    });
+      status: itemStatus,
+      isSet: Boolean(product.isSet),
+    };
+
+    if (product.isSet) {
+      transactionItem.setComponents = componentDetails;
+    }
+
+    validatedItems.push(transactionItem);
   }
 
   // Apply stock changes after validation
@@ -299,7 +323,20 @@ const updateTransaction = asyncHandler(async (req, res) => {
         const product = restoreProductMap.get(productId);
         if (!product) continue;
 
-        if (product.isSet && product.setItems?.length) {
+        if (
+          product.isSet &&
+          Array.isArray(oldItem.setComponents) &&
+          oldItem.setComponents.length > 0
+        ) {
+          oldItem.setComponents.forEach((component) => {
+            if (!component?.taken) return;
+            if (!component?.productId) return;
+            const qty = Number(component.quantity) || 0;
+            if (qty > 0) {
+              accumulateStockChange(restoreChanges, component.productId, qty);
+            }
+          });
+        } else if (product.isSet && product.setItems?.length) {
           for (const setItem of product.setItems) {
             const component = setItem?.product;
             if (!component) continue;
@@ -338,11 +375,29 @@ const updateTransaction = asyncHandler(async (req, res) => {
 
       const requestedQuantity = Number(item.quantity);
 
+      let itemStatus = 'fulfilled';
+      let componentDetails = [];
+
       if (product.isSet) {
         if (!product.setItems || product.setItems.length === 0) {
           res.status(400);
           throw new Error(`Set ${product.name} has no component items configured.`);
         }
+
+        const desiredComponents = new Map();
+        (Array.isArray(item.setComponents) ? item.setComponents : []).forEach((comp) => {
+          if (!comp) return;
+          const id =
+            (comp.productId && comp.productId.toString) ? comp.productId.toString() :
+            comp.productId ? String(comp.productId) :
+            comp.product && comp.product._id && comp.product._id.toString
+              ? comp.product._id.toString()
+              : comp.product && comp.product._id
+              ? String(comp.product._id)
+              : undefined;
+          if (!id) return;
+          desiredComponents.set(id, comp);
+        });
 
         for (const setItem of product.setItems) {
           const component = setItem.product;
@@ -353,12 +408,36 @@ const updateTransaction = asyncHandler(async (req, res) => {
 
           const componentId = component._id.toString();
           const required = requestedQuantity * (Number(setItem.quantity) || 1);
-          if (getProjectedStock(componentId, newStockMap, stockChanges) < required) {
-            res.status(400);
-            throw new Error(`Insufficient stock for ${component.name} in set ${product.name}. Required: ${required}, Available: ${component.stock}`);
+          const desiredComponent = desiredComponents.get(componentId);
+          const hasTakenFlag =
+            desiredComponent && Object.prototype.hasOwnProperty.call(desiredComponent, 'taken');
+          const desiredTaken = hasTakenFlag ? Boolean(desiredComponent.taken) : true;
+
+          let taken = desiredTaken;
+          let reason = desiredComponent?.reason;
+
+          if (taken) {
+            if (getProjectedStock(componentId, newStockMap, stockChanges) < required) {
+              res.status(400);
+              throw new Error(
+                `Insufficient stock for ${component.name} in set ${product.name}. Required: ${required}, Available: ${component.stock}`
+              );
+            }
+            accumulateStockChange(stockChanges, componentId, -required);
+          } else {
+            itemStatus = 'partial';
+            if (!reason) {
+              reason = hasTakenFlag ? 'Marked as not taken' : 'Insufficient stock at issuance';
+            }
           }
 
-          accumulateStockChange(stockChanges, componentId, -required);
+          componentDetails.push({
+            productId: component._id,
+            name: component.name,
+            quantity: required,
+            taken,
+            reason: taken ? undefined : reason,
+          });
         }
       } else {
         if (getProjectedStock(productId, newStockMap, stockChanges) < requestedQuantity) {
@@ -371,14 +450,21 @@ const updateTransaction = asyncHandler(async (req, res) => {
 
       const itemTotal = requestedQuantity * Number(item.price);
       totalAmount += itemTotal;
-
-      validatedItems.push({
+      const transactionItem = {
         productId: item.productId,
         name: item.name || product.name,
         quantity: requestedQuantity,
         price: Number(item.price),
         total: itemTotal,
-      });
+        status: itemStatus,
+        isSet: Boolean(product.isSet),
+      };
+
+      if (product.isSet) {
+        transactionItem.setComponents = componentDetails;
+      }
+
+      validatedItems.push(transactionItem);
     }
 
     await applyStockChanges(stockChanges);
@@ -448,7 +534,20 @@ const deleteTransaction = asyncHandler(async (req, res) => {
       const product = restoreProductMap.get(productId);
       if (!product) continue;
 
-      if (product.isSet && product.setItems?.length) {
+      if (
+        product.isSet &&
+        Array.isArray(item.setComponents) &&
+        item.setComponents.length > 0
+      ) {
+        item.setComponents.forEach((component) => {
+          if (!component?.taken) return;
+          if (!component?.productId) return;
+          const qty = Number(component.quantity) || 0;
+          if (qty > 0) {
+            accumulateStockChange(restoreChanges, component.productId, qty);
+          }
+        });
+      } else if (product.isSet && product.setItems?.length) {
         for (const setItem of product.setItems) {
           const component = setItem?.product;
           if (!component) continue;
