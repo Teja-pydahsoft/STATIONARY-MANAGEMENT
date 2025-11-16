@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Upload, Search, Users, Edit2, Trash2, X, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
+import { Upload, Search, Users, Edit2, Trash2, X, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Filter } from 'lucide-react';
 import { apiUrl } from '../utils/api';
+import { loadJSON, saveJSON } from '../utils/storage';
 
 const StudentRow = ({
   student,
@@ -146,6 +147,12 @@ const VIEW_MODES = {
 };
 
 const StudentManagement = ({ students = [], setStudents, addStudent, refreshStudents }) => {
+  // SQL cache keys & TTL (5 minutes)
+  const SQL_CACHE_KEY = 'sql_students_rows';
+  const SQL_META_KEY = 'sql_students_meta';
+  const SQL_CACHE_TIMESTAMP_KEY = 'sql_students_timestamp';
+  const SQL_CACHE_TTL = 5 * 60 * 1000;
+
   const [showAddModal, setShowAddModal] = useState(false);
   const [name, setName] = useState('');
   const [studentId, setStudentId] = useState('');
@@ -170,6 +177,12 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
   const [expandedDetails, setExpandedDetails] = useState(null); // 'inserted', 'updated', 'skipped', null
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [showSyncModal, setShowSyncModal] = useState(false);
+  const [syncFilters, setSyncFilters] = useState({
+    course: '',
+    branch: '',
+    year: '',
+  });
 
   const [viewMode, setViewMode] = useState(VIEW_MODES.mongo);
   const cancelSqlFetchRef = useRef(false);
@@ -177,6 +190,12 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
   const isSqlActive = viewMode === VIEW_MODES.sql;
   const dataSource = isSqlActive ? sqlStudents : students;
   const isSqlMode = isSqlActive;
+
+  const isSqlCacheValid = useCallback(() => {
+    const timestamp = loadJSON(SQL_CACHE_TIMESTAMP_KEY, null);
+    if (!timestamp) return false;
+    return Date.now() - timestamp < SQL_CACHE_TTL;
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -196,6 +215,18 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
     })();
   }, []);
 
+  // Load SQL students from cache on mount (if available)
+  useEffect(() => {
+    const cachedRows = loadJSON(SQL_CACHE_KEY, null);
+    const cachedMeta = loadJSON(SQL_META_KEY, null);
+
+    if (Array.isArray(cachedRows) && cachedRows.length > 0) {
+      setSqlStudents(cachedRows);
+      setSqlMeta(cachedMeta || null);
+      setSqlLoaded(true);
+    }
+  }, []);
+
   useEffect(() => {
     cancelSqlFetchRef.current = false;
     return () => {
@@ -203,44 +234,71 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
     };
   }, []);
 
-  const fetchSqlStudents = useCallback(async () => {
-    if (sqlLoading) return;
-    setSqlLoading(true);
-    setSqlError('');
-    try {
-      const res = await fetch(apiUrl('/api/sql/students'));
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(errorText || `Failed with status ${res.status}`);
-      }
-      const data = await res.json();
-      if (!cancelSqlFetchRef.current) {
-        setSqlStudents(Array.isArray(data?.rows) ? data.rows : []);
-        setSqlMeta({ table: data?.table, count: data?.count });
+  const fetchSqlStudents = useCallback(
+    async ({ forceRefresh = false } = {}) => {
+      if (sqlLoading) return;
+
+      // If we already have fresh cached data, don't refetch
+      if (!forceRefresh && isSqlCacheValid() && (sqlStudents?.length || 0) > 0) {
         setSqlLoaded(true);
+        return;
       }
-    } catch (error) {
-      if (!cancelSqlFetchRef.current) {
-        console.error('Failed to fetch MySQL students:', error);
-        setSqlError(error.message || 'Unable to load external students.');
-        setSqlLoaded(false);
+      setSqlLoading(true);
+      setSqlError('');
+      try {
+        const res = await fetch(apiUrl('/api/sql/students'));
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(errorText || `Failed with status ${res.status}`);
+        }
+        const data = await res.json();
+        if (!cancelSqlFetchRef.current) {
+          const rows = Array.isArray(data?.rows) ? data.rows : [];
+          const meta = { table: data?.table, count: data?.count };
+
+          setSqlStudents(rows);
+          setSqlMeta(meta);
+          setSqlLoaded(true);
+
+          // Persist to local storage cache
+          saveJSON(SQL_CACHE_KEY, rows);
+          saveJSON(SQL_META_KEY, meta);
+          saveJSON(SQL_CACHE_TIMESTAMP_KEY, Date.now());
+        }
+      } catch (error) {
+        if (!cancelSqlFetchRef.current) {
+          console.error('Failed to fetch MySQL students:', error);
+          setSqlError(error.message || 'Unable to load external students.');
+          setSqlLoaded(false);
+        }
+      } finally {
+        if (!cancelSqlFetchRef.current) {
+          setSqlLoading(false);
+        }
       }
-    } finally {
-      if (!cancelSqlFetchRef.current) {
-        setSqlLoading(false);
-      }
-    }
-  }, [sqlLoading]);
+    },
+    [sqlLoading, sqlStudents?.length, isSqlCacheValid],
+  );
 
   const handleSyncToMongo = async () => {
     if (syncing) return;
     setSyncing(true);
     setSyncFeedback(null);
     setSyncStats(null);
+    // Keep modal open to show progress
+    
     try {
+      // Build filter arrays from dropdown selections
+      const filters = {
+        courses: syncFilters.course ? [syncFilters.course] : [],
+        branches: syncFilters.branch ? [syncFilters.branch] : [],
+        years: syncFilters.year ? [Number(syncFilters.year)] : [],
+      };
+
       const res = await fetch(apiUrl('/api/sql/students/sync'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filters }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -255,6 +313,7 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
         updated = 0,
         skipped = 0,
         total = 0,
+        filtered = 0,
         errors = [],
         insertedDetails = [],
         updatedDetails = [],
@@ -264,13 +323,14 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
 
       setSyncFeedback({
         type: 'success',
-        message: `${message}`,
+        message: `${message}${filtered !== total ? ` (Filtered: ${filtered} of ${total} students)` : ''}`,
       });
       setSyncStats({
         inserted,
         updated,
         skipped,
         total,
+        filtered: filtered || total,
         table: data?.table,
         errors: errors?.length || 0,
         insertedDetails: insertedDetails || [],
@@ -279,6 +339,12 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
         timestamp: new Date().toISOString(),
       });
       setExpandedDetails(null); // Reset expanded section
+
+      // Reset filters after successful sync
+      setSyncFilters({ course: '', branch: '', year: '' });
+
+      // Close modal after successful sync
+      setShowSyncModal(false);
 
       if (typeof refreshStudents === 'function') {
         await refreshStudents();
@@ -293,6 +359,7 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
         message: error.message || 'Unable to sync students from MySQL.',
       });
       setSyncStats(null);
+      // Keep modal open on error so user can see the error message
     } finally {
       setSyncing(false);
     }
@@ -438,11 +505,11 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
           {isSqlMode ? (
             <button
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-              onClick={handleSyncToMongo}
-              disabled={syncing}
+              onClick={() => setShowSyncModal(true)}
+              disabled={syncing || sqlLoading}
             >
-              <Upload size={16} className={syncing ? 'animate-spin' : ''} />
-              {syncing ? 'Syncing…' : 'Sync to Stationery DB'}
+              <Upload size={16} />
+              Sync to Stationery DB
             </button>
           ) : null}
         </div>
@@ -486,8 +553,16 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
             <div className="grid gap-4 md:grid-cols-4">
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
                 <h4 className="text-sm font-medium text-gray-500 uppercase tracking-wider">Processed</h4>
-                <p className="text-2xl font-semibold text-gray-900 mt-1">{syncStats.total}</p>
-                <p className="text-xs text-gray-400 mt-1">Table: {syncStats.table || 'students'}</p>
+                <p className="text-2xl font-semibold text-gray-900 mt-1">
+                  {syncStats.filtered !== undefined && syncStats.filtered !== syncStats.total 
+                    ? `${syncStats.filtered} / ${syncStats.total}` 
+                    : syncStats.total}
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  {syncStats.filtered !== undefined && syncStats.filtered !== syncStats.total 
+                    ? `Filtered: ${syncStats.filtered} of ${syncStats.total}` 
+                    : `Table: ${syncStats.table || 'students'}`}
+                </p>
               </div>
               <button
                 onClick={() => setExpandedDetails(expandedDetails === 'inserted' ? null : 'inserted')}
@@ -916,6 +991,236 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Sync Modal with Filters */}
+      {showSyncModal && (
+        <div className="fixed inset-0 flex items-center justify-center p-4 z-50 overflow-y-auto" onClick={() => setShowSyncModal(false)}>
+          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl my-auto border border-gray-200" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 bg-white z-10 border-b border-gray-200 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Filter className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Sync Students from MySQL</h3>
+                    <p className="text-xs sm:text-sm text-gray-600">Apply filters to sync specific students</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowSyncModal(false)} 
+                  className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0 ml-2"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 space-y-5">
+              {/* Loading State */}
+              {syncing && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
+                    <div>
+                      <p className="text-sm font-medium text-blue-900">Syncing students...</p>
+                      <p className="text-xs text-blue-700 mt-1">Please wait while students are being synced to MongoDB.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Course Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Course
+                </label>
+                <p className="text-xs text-gray-500 mb-2">Select a course to filter, or leave empty to sync all</p>
+                <div className="relative">
+                  <select
+                    value={syncFilters.course}
+                    onChange={(e) => {
+                      const selectedCourse = e.target.value;
+                      setSyncFilters(prev => ({
+                        ...prev,
+                        course: selectedCourse,
+                        branch: '', // Reset branch when course changes
+                        year: '', // Reset year when course changes
+                      }));
+                    }}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none bg-white pr-10 cursor-pointer hover:border-gray-400 transition-colors text-sm disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                    disabled={syncing}
+                  >
+                    <option value="">All Courses</option>
+                    {Array.from(new Set((sqlStudents || []).map(s => s.course).filter(Boolean)))
+                      .sort()
+                      .map(course => (
+                        <option key={course} value={course}>
+                          {course.toUpperCase()}
+                        </option>
+                      ))}
+                  </select>
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                    <ChevronDown className="w-5 h-5 text-gray-400" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Branch Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Branch
+                </label>
+                <p className="text-xs text-gray-500 mb-2">Select a branch to filter, or leave empty to sync all</p>
+                <div className="relative">
+                  <select
+                    value={syncFilters.branch}
+                    onChange={(e) => {
+                      setSyncFilters(prev => ({
+                        ...prev,
+                        branch: e.target.value,
+                        year: '', // Reset year when branch changes
+                      }));
+                    }}
+                    disabled={!syncFilters.course || syncing}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none bg-white pr-10 cursor-pointer hover:border-gray-400 transition-colors disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500 text-sm"
+                  >
+                    <option value="">
+                      {syncFilters.course ? 'All Branches' : 'Select a course first'}
+                    </option>
+                    {(() => {
+                      // Get branches based on selected course, or all if no course selected
+                      const filteredByCourse = syncFilters.course
+                        ? sqlStudents.filter(s => s.course === syncFilters.course)
+                        : sqlStudents;
+                      const availableBranches = Array.from(new Set(filteredByCourse.map(s => s.branch).filter(Boolean))).sort();
+                      
+                      return availableBranches.map(branch => (
+                        <option key={branch} value={branch}>
+                          {branch}
+                        </option>
+                      ));
+                    })()}
+                  </select>
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                    <ChevronDown className="w-5 h-5 text-gray-400" />
+                  </div>
+                </div>
+                {syncFilters.course && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Showing branches for {syncFilters.course.toUpperCase()}
+                  </p>
+                )}
+              </div>
+
+              {/* Year Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Year
+                </label>
+                <p className="text-xs text-gray-500 mb-2">Select a year to filter, or leave empty to sync all</p>
+                <div className="relative">
+                  <select
+                    value={syncFilters.year}
+                    onChange={(e) => {
+                      setSyncFilters(prev => ({
+                        ...prev,
+                        year: e.target.value,
+                      }));
+                    }}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none bg-white pr-10 cursor-pointer hover:border-gray-400 transition-colors text-sm disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                    disabled={syncing}
+                  >
+                    <option value="">All Years</option>
+                    {(() => {
+                      // Get years based on selected course/branch, or all if none selected
+                      let filtered = sqlStudents;
+                      if (syncFilters.course) {
+                        filtered = filtered.filter(s => s.course === syncFilters.course);
+                      }
+                      if (syncFilters.branch) {
+                        filtered = filtered.filter(s => s.branch === syncFilters.branch);
+                      }
+                      const availableYears = Array.from(new Set(filtered.map(s => s.year).filter(y => y && y !== 'N/A')))
+                        .sort((a, b) => Number(a) - Number(b));
+                      
+                      return availableYears.map(year => (
+                        <option key={year} value={String(year)}>
+                          Year {year}
+                        </option>
+                      ));
+                    })()}
+                  </select>
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                    <ChevronDown className="w-5 h-5 text-gray-400" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Summary */}
+              {(syncFilters.course || syncFilters.branch || syncFilters.year) && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <p className="text-sm font-medium text-blue-900 mb-2">Selected Filters:</p>
+                  <div className="text-xs text-blue-800 space-y-1">
+                    {syncFilters.course && (
+                      <p>• <strong>Course:</strong> {syncFilters.course.toUpperCase()}</p>
+                    )}
+                    {syncFilters.branch && (
+                      <p>• <strong>Branch:</strong> {syncFilters.branch}</p>
+                    )}
+                    {syncFilters.year && (
+                      <p>• <strong>Year:</strong> Year {syncFilters.year}</p>
+                    )}
+                    <p className="mt-2 text-blue-700">
+                      Only students matching all selected filters will be synced.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {(!syncFilters.course && !syncFilters.branch && !syncFilters.year) && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <p className="text-xs sm:text-sm text-yellow-800">
+                    <strong>No filters selected:</strong> All students from the MySQL table will be synced (excluding cancelled admissions).
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex flex-col sm:flex-row justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSyncModal(false);
+                  setSyncFilters({ course: '', branch: '', year: '' });
+                }}
+                className="w-full sm:w-auto px-5 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm"
+                disabled={syncing}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSyncToMongo}
+                disabled={syncing}
+                className="w-full sm:w-auto px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm"
+              >
+                {syncing ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Syncing...
+                  </>
+                ) : (
+                  <>
+                    <Upload size={16} />
+                    Start Sync
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

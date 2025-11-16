@@ -257,12 +257,20 @@ const syncSqlStudents = asyncHandler(async (req, res) => {
     throw new Error('MySQL pool is not configured. Check environment variables.');
   }
 
+  // Extract filters from request body
+  const { filters = {} } = req.body;
+  const { courses = [], branches = [], years = [] } = filters;
+  const hasFilters = (Array.isArray(courses) && courses.length > 0) ||
+                     (Array.isArray(branches) && branches.length > 0) ||
+                     (Array.isArray(years) && years.length > 0);
+
   const tableName = process.env.DB_STUDENTS_TABLE || DEFAULT_STUDENT_TABLE;
   const sql = `SELECT * FROM \`${tableName}\``;
 
   const summary = {
     table: tableName,
     total: 0,
+    filtered: 0,
     inserted: 0,
     updated: 0,
     skipped: 0,
@@ -279,8 +287,65 @@ const syncSqlStudents = asyncHandler(async (req, res) => {
       return;
     }
 
-    const normalized = rows.map(normalizeStudentRow);
+    let normalized = rows.map(normalizeStudentRow);
     summary.total = normalized.length;
+
+    // Apply filters if provided
+    if (hasFilters) {
+      normalized = normalized.filter((student) => {
+        // Course filter
+        if (courses.length > 0) {
+          const studentCourse = isMeaningful(student.course) 
+            ? ensureString(student.course).toLowerCase().trim() 
+            : null;
+          const matchesCourse = courses.some(filterCourse => {
+            const normalizedFilter = ensureString(filterCourse).toLowerCase().trim();
+            return studentCourse === normalizedFilter;
+          });
+          if (!matchesCourse) return false;
+        }
+
+        // Branch filter
+        if (branches.length > 0) {
+          const studentBranch = isMeaningful(student.branch) 
+            ? ensureString(student.branch).trim() 
+            : null;
+          const matchesBranch = branches.some(filterBranch => {
+            const normalizedFilter = ensureString(filterBranch).trim();
+            return studentBranch === normalizedFilter;
+          });
+          if (!matchesBranch) return false;
+        }
+
+        // Year filter
+        if (years.length > 0) {
+          const rawYear = isMeaningful(student.year) ? student.year : null;
+          const yearNumber = rawYear !== null && rawYear !== undefined ? Number.parseInt(rawYear, 10) : null;
+          const studentYear = yearNumber && Number.isFinite(yearNumber) && yearNumber > 0 ? yearNumber : null;
+          const matchesYear = years.some(filterYear => {
+            const filterYearNum = Number.parseInt(filterYear, 10);
+            return Number.isFinite(filterYearNum) && studentYear === filterYearNum;
+          });
+          if (!matchesYear) return false;
+        }
+
+        return true;
+      });
+      summary.filtered = normalized.length;
+    } else {
+      summary.filtered = normalized.length;
+    }
+
+    // If no students match filters, return early
+    if (normalized.length === 0) {
+      res.json({
+        ...summary,
+        message: hasFilters 
+          ? 'No students match the selected filters.' 
+          : 'No records found in MySQL table.',
+      });
+      return;
+    }
 
     const uniqueIds = new Set();
     normalized.forEach((student) => {
