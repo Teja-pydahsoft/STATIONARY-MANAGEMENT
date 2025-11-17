@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Upload, Search, Users, Edit2, Trash2, X, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Filter } from 'lucide-react';
+import { Upload, Search, Users, Edit2, Trash2, X, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Filter, RefreshCw } from 'lucide-react';
 import { apiUrl } from '../utils/api';
-import { loadJSON, saveJSON } from '../utils/storage';
+import { loadJSON, saveJSON, removeStoredItem } from '../utils/storage';
 
 const StudentRow = ({
   student,
@@ -147,11 +147,11 @@ const VIEW_MODES = {
 };
 
 const StudentManagement = ({ students = [], setStudents, addStudent, refreshStudents }) => {
-  // SQL cache keys & TTL (5 minutes)
+  // SQL cache keys & TTL (2 minutes)
   const SQL_CACHE_KEY = 'sql_students_rows';
   const SQL_META_KEY = 'sql_students_meta';
   const SQL_CACHE_TIMESTAMP_KEY = 'sql_students_timestamp';
-  const SQL_CACHE_TTL = 5 * 60 * 1000;
+  const SQL_CACHE_TTL = 2 * 60 * 1000;
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [name, setName] = useState('');
@@ -246,7 +246,12 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
       setSqlLoading(true);
       setSqlError('');
       try {
-        const res = await fetch(apiUrl('/api/sql/students'));
+        // Add forceRefresh query parameter when forceRefresh is true
+        const url = forceRefresh 
+          ? apiUrl(`/api/sql/students?forceRefresh=true`)
+          : apiUrl('/api/sql/students');
+        
+        const res = await fetch(url);
         if (!res.ok) {
           const errorText = await res.text();
           throw new Error(errorText || `Failed with status ${res.status}`);
@@ -260,7 +265,8 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
           setSqlMeta(meta);
           setSqlLoaded(true);
 
-          // Persist to local storage cache
+          // Always persist to local storage cache after fetching (even with forceRefresh)
+          // This ensures the cache is updated with the latest live data
           saveJSON(SQL_CACHE_KEY, rows);
           saveJSON(SQL_META_KEY, meta);
           saveJSON(SQL_CACHE_TIMESTAMP_KEY, Date.now());
@@ -295,10 +301,15 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
         years: syncFilters.year ? [Number(syncFilters.year)] : [],
       };
 
+      // Force refresh to bypass cache and get fresh data from SQL
       const res = await fetch(apiUrl('/api/sql/students/sync'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filters }),
+        body: JSON.stringify({ 
+          filters,
+          forceRefresh: true, // Tell backend to fetch fresh data from SQL
+          noCache: true, // Additional flag to ensure no caching
+        }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -346,12 +357,18 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
       // Close modal after successful sync
       setShowSyncModal(false);
 
+      // Clear SQL cache to ensure fresh data on next view
+      removeStoredItem(SQL_CACHE_KEY);
+      removeStoredItem(SQL_META_KEY);
+      removeStoredItem(SQL_CACHE_TIMESTAMP_KEY);
+
       if (typeof refreshStudents === 'function') {
         await refreshStudents();
       }
 
       if (viewMode === VIEW_MODES.sql) {
-        await fetchSqlStudents();
+        // Force refresh SQL students after sync to show latest data
+        await fetchSqlStudents({ forceRefresh: true });
       }
     } catch (error) {
       setSyncFeedback({
@@ -504,7 +521,7 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
 
           {isSqlMode ? (
             <button
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
               onClick={() => setShowSyncModal(true)}
               disabled={syncing || sqlLoading}
             >
@@ -517,12 +534,25 @@ const StudentManagement = ({ students = [], setStudents, addStudent, refreshStud
 
       {viewMode === VIEW_MODES.sql && (
         <div className="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-900">
-          <h3 className="text-base font-semibold mb-1">Read-only view from MySQL</h3>
-          <p>
-            Showing {sqlMeta?.count ?? sqlStudents.length} records from table{' '}
-            <span className="font-medium">{sqlMeta?.table ?? 'students'}</span> in the configured MySQL
-            database. Editing, adding, or deleting is disabled in this mode.
-          </p>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex-1">
+              <h3 className="text-base font-semibold mb-1">Read-only view from MySQL</h3>
+              <p>
+                Showing {sqlMeta?.count ?? sqlStudents.length} records from table{' '}
+                <span className="font-medium">{sqlMeta?.table ?? 'students'}</span> in the configured MySQL
+                database. Editing, adding, or deleting is disabled in this mode.
+              </p>
+            </div>
+            <button
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed shadow-md hover:shadow-lg text-sm font-medium shrink-0"
+              onClick={() => fetchSqlStudents({ forceRefresh: true })}
+              disabled={sqlLoading}
+              title="Refresh SQL students data"
+            >
+              <RefreshCw size={16} className={sqlLoading ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+          </div>
         </div>
       )}
 

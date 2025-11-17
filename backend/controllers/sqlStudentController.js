@@ -77,8 +77,14 @@ const getSqlStudents = asyncHandler(async (req, res) => {
     throw new Error('MySQL pool is not configured. Check environment variables.');
   }
 
+  // Check for forceRefresh query parameter or body parameter
+  const forceRefresh = req.query.forceRefresh === 'true' || req.body?.forceRefresh === true || req.body?.noCache === true;
+
   const tableName = process.env.DB_STUDENTS_TABLE || DEFAULT_STUDENT_TABLE;
-  const sql = `SELECT * FROM \`${tableName}\``;
+  // Use SQL_NO_CACHE hint to bypass MySQL query cache when forceRefresh is true
+  const sql = forceRefresh 
+    ? `SELECT SQL_NO_CACHE * FROM \`${tableName}\``
+    : `SELECT * FROM \`${tableName}\``;
 
   try {
     const [rows] = await pool.query(sql);
@@ -257,15 +263,18 @@ const syncSqlStudents = asyncHandler(async (req, res) => {
     throw new Error('MySQL pool is not configured. Check environment variables.');
   }
 
-  // Extract filters from request body
-  const { filters = {} } = req.body;
+  // Extract filters and forceRefresh flag from request body
+  const { filters = {}, forceRefresh = false, noCache = false } = req.body;
   const { courses = [], branches = [], years = [] } = filters;
   const hasFilters = (Array.isArray(courses) && courses.length > 0) ||
                      (Array.isArray(branches) && branches.length > 0) ||
                      (Array.isArray(years) && years.length > 0);
 
   const tableName = process.env.DB_STUDENTS_TABLE || DEFAULT_STUDENT_TABLE;
-  const sql = `SELECT * FROM \`${tableName}\``;
+  // Use SQL_NO_CACHE hint to bypass MySQL query cache when forceRefresh is true
+  const sql = (forceRefresh || noCache) 
+    ? `SELECT SQL_NO_CACHE * FROM \`${tableName}\``
+    : `SELECT * FROM \`${tableName}\``;
 
   const summary = {
     table: tableName,
