@@ -333,7 +333,7 @@ const StudentDashboard = ({ initialStudents = [], isOnline: isOnlineProp }) => {
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-7xl mx-auto">
+      <div className=" mx-auto">
         <div className="mb-8">
           {/* <div className="flex items-center gap-3 mb-6">
             <button
