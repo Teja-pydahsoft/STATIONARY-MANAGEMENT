@@ -96,8 +96,7 @@ app.use(express.json());
 
 // Sample route
 app.get("/", (req, res) => {
-  res.send("Server is running! 😉");
-  res.send("🎯 Backend is running! 😉");
+  res.send("Server is running! 😉😉😉😉😉😉");
   
 });
 
@@ -129,10 +128,10 @@ app.use((err, req, res, next) => {
   console.error("Error:", err);
   console.error("Stack:", err.stack);
   const statusCode = err.statusCode || res.statusCode || 500;
-  // res.status(statusCode).json({
-  //   message: err.message || "Internal Server Error",
-  //   error: process.env.NODE_ENV === "development" ? err.stack : undefined,
-  // });
+  res.status(statusCode).json({
+    message: err.message || "Internal Server Error",
+    error: process.env.NODE_ENV === "development" ? err.stack : undefined,
+  });
 });
 
 // 404 handler
