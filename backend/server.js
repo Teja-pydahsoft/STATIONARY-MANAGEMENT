@@ -97,7 +97,7 @@ app.use(express.json());
 // Sample route
 app.get("/", (req, res) => {
   res.send("Server is running! 😉");
-  res.send("🎯")
+  res.send("🎯 Backend is running! 😉");
   
 });
 
