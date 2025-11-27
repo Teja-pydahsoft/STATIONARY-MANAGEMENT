@@ -1056,9 +1056,8 @@ const StudentDetail = ({
                             {/* Thermal Header */}
                             <div className="thermal-header">
                               <h1>{receiptConfig.receiptHeader}</h1>
-                              <p>{receiptConfig.receiptSubheader}</p>
-                              <p style={{ marginTop: '1mm', fontSize: '7px' }}>
-                                {new Date(transaction.transactionDate || transaction.createdAt || Date.now()).toLocaleDateString('en-IN', { 
+                              <p style={{ textAlign: 'center' }}>
+                                {receiptConfig.receiptSubheader} | {new Date(transaction.transactionDate || transaction.createdAt || Date.now()).toLocaleDateString('en-IN', { 
                                   day: '2-digit', 
                                   month: '2-digit', 
                                   year: 'numeric',
@@ -1113,26 +1112,22 @@ const StudentDetail = ({
                               </tbody>
                             </table>
 
-                            {/* Total */}
+                            {/* Total with Payment Type */}
                             <div className="thermal-total">
-                              <span>TOTAL:</span>
+                              <span>TOTAL ({transaction.paymentMethod === 'cash' ? 'CASH' : 'ONLINE'}):</span>
                               <span>₹{Number(transaction.totalAmount).toFixed(2)}</span>
                             </div>
 
-                            {/* Payment Info */}
-                            <div className="thermal-payment">
-                              <p><span>Payment: {transaction.paymentMethod === 'cash' ? 'CASH' : 'ONLINE'}</span> <span>Status: {transaction.isPaid ? 'PAID' : 'UNPAID'}</span></p>
-                              {transaction.remarks && (
+                            {/* Remarks if any */}
+                            {transaction.remarks && (
+                              <div className="thermal-payment">
                                 <p style={{ display: 'block' }}><span>Note: {transaction.remarks}</span></p>
-                              )}
-                            </div>
+                              </div>
+                            )}
 
                             {/* Footer */}
                             <div className="thermal-footer">
-                              <p>--------------------------------</p>
-                              <p>Thank you for your purchase!</p>
-                              <p>💖 PydahSoft 💖</p>
-                              <p>--------------------------------</p>
+                              <p>Thank you! 💖 PydahSoft 💖</p>
                             </div>
                           </div>
                         </div>
