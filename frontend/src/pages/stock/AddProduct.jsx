@@ -115,6 +115,7 @@ const AddProduct = ({ itemCategories, addItemCategory, setItemCategories, curren
   const handleViewDetails = (product) => {
     setSelectedProduct(product);
     setShowProductDetail(true);
+    setShowAddProduct(false); // Ensure Add modal is closed when viewing/editing
   };
 
   const handleProductUpdate = (updatedProduct) => {
@@ -341,8 +342,40 @@ const AddProduct = ({ itemCategories, addItemCategory, setItemCategories, curren
         return;
       }
 
-      if (showAddProduct) {
+      // Determine if this is an update or create operation
+      // Update: when viewing/editing an existing product (selectedProduct exists with valid _id)
+      // Create: when adding a new product (showAddProduct is true and no selectedProduct)
+      const isUpdateOperation = selectedProduct && selectedProduct._id && showProductDetail;
+      const isCreateOperation = showAddProduct && !selectedProduct;
+
+      if (isUpdateOperation) {
+        // Update existing product
+        console.log('Updating product:', selectedProduct._id, selectedProduct.name);
+        const response = await fetch(apiUrl(`/api/products/${selectedProduct._id}`), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...formData,
+            setItems: formData.isSet
+              ? (formData.setItems || []).map(item => ({
+                  productId: item.productId,
+                  quantity: item.quantity,
+                }))
+              : [],
+            lowStockThreshold: formData.isSet ? 0 : formData.lowStockThreshold,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to update product');
+        }
+
+        const updated = await response.json();
+        handleProductUpdate(updated);
+      } else if (isCreateOperation) {
         // Create new product (with price, but stock stays 0)
+        console.log('Creating new product:', formData.name);
         const response = await fetch(apiUrl('/api/products'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -374,30 +407,10 @@ const AddProduct = ({ itemCategories, addItemCategory, setItemCategories, curren
         const created = await response.json();
         handleProductCreate(created);
         setShowAddProduct(false);
-      } else if (selectedProduct) {
-        // Update existing product
-        const response = await fetch(apiUrl(`/api/products/${selectedProduct._id}`), {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...formData,
-            setItems: formData.isSet
-              ? (formData.setItems || []).map(item => ({
-                  productId: item.productId,
-                  quantity: item.quantity,
-                }))
-              : [],
-            lowStockThreshold: formData.isSet ? 0 : formData.lowStockThreshold,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || 'Failed to update product');
-        }
-
-        const updated = await response.json();
-        handleProductUpdate(updated);
+      } else {
+        // Fallback: shouldn't happen, but log for debugging
+        console.error('Save operation failed: Invalid state', { showAddProduct, showProductDetail, selectedProduct: selectedProduct?._id });
+        throw new Error('Unable to determine save operation. Please close and reopen the form.');
       }
     } catch (err) {
       setError(err.message || 'Failed to save product');
@@ -437,7 +450,12 @@ const AddProduct = ({ itemCategories, addItemCategory, setItemCategories, curren
           </div>
         </div>
         <button
-          onClick={() => setShowAddProduct(true)}
+          onClick={() => {
+            setShowAddProduct(true);
+            setShowProductDetail(false); // Ensure View modal is closed when adding
+            setSelectedProduct(null);    // Clear any selected product
+            setIsEditing(false);
+          }}
           className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all shadow-md hover:shadow-lg font-medium"
         >
           <Plus size={20} />
@@ -553,7 +571,12 @@ const AddProduct = ({ itemCategories, addItemCategory, setItemCategories, curren
           </p>
           {!searchQuery && !selectedCourse && !selectedYear && (
             <button
-              onClick={() => setShowAddProduct(true)}
+              onClick={() => {
+                setShowAddProduct(true);
+                setShowProductDetail(false);
+                setSelectedProduct(null);
+                setIsEditing(false);
+              }}
               className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-md hover:shadow-lg"
             >
               <Plus size={20} />

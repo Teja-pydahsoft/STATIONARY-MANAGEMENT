@@ -174,6 +174,9 @@ const updateProduct = async (req, res) => {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
+    // Track old name for updating transactions if name changes
+    const oldName = product.name;
+
   const { name, description, price, stock, imageUrl, forCourse, branch, years, year, remarks, isSet, setItems, lowStockThreshold } = req.body;
   // Handle years array - if years is provided, use it; otherwise fallback to year for backward compatibility
   let parsedYears = undefined;
@@ -262,6 +265,68 @@ const updateProduct = async (req, res) => {
 
     const updated = await product.save();
     await updated.populate({ path: 'setItems.product', select: 'name price isSet' });
+
+    // If the product name changed, update it in all related records
+    const newName = updated.name;
+    if (oldName !== newName) {
+      try {
+        const { Transaction } = require('../models/transactionModel');
+        const { User } = require('../models/userModel');
+        
+        // Helper to convert product name to items key format
+        const nameToKey = (name) => name?.toLowerCase().replace(/\s+/g, '_') || '';
+        const oldKey = nameToKey(oldName);
+        const newKey = nameToKey(newName);
+        
+        // Update product name in transaction items
+        await Transaction.updateMany(
+          { 'items.productId': updated._id },
+          { $set: { 'items.$[item].name': newName } },
+          { arrayFilters: [{ 'item.productId': updated._id }] }
+        );
+
+        // Update product name in setComponents (when this product is part of a set)
+        await Transaction.updateMany(
+          { 'items.setComponents.productId': updated._id },
+          { $set: { 'items.$[].setComponents.$[comp].name': newName } },
+          { arrayFilters: [{ 'comp.productId': updated._id }] }
+        );
+
+        // Also update productNameSnapshot in other products' setItems that reference this product
+        await Product.updateMany(
+          { 'setItems.product': updated._id },
+          { $set: { 'setItems.$[item].productNameSnapshot': newName } },
+          { arrayFilters: [{ 'item.product': updated._id }] }
+        );
+
+        // Update the items key in all students who have this product
+        // Rename the key from old name format to new name format
+        if (oldKey && newKey && oldKey !== newKey) {
+          // Find all users who have the old key in their items
+          const usersWithOldKey = await User.find({ [`items.${oldKey}`]: { $exists: true } });
+          
+          for (const user of usersWithOldKey) {
+            const oldValue = user.items[oldKey];
+            // Use $unset to remove old key and $set to add new key
+            await User.updateOne(
+              { _id: user._id },
+              { 
+                $unset: { [`items.${oldKey}`]: "" },
+                $set: { [`items.${newKey}`]: oldValue }
+              }
+            );
+          }
+          
+          console.log(`Updated items key from "${oldKey}" to "${newKey}" for ${usersWithOldKey.length} students`);
+        }
+
+        console.log(`Product name updated from "${oldName}" to "${newName}" in all transactions and sets`);
+      } catch (syncError) {
+        // Log but don't fail the update if transaction sync fails
+        console.error('Failed to sync product name to related records:', syncError);
+      }
+    }
+
     res.json(updated);
   } catch (error) {
     res.status(400).json({ message: 'Error updating product', error: error.message });
