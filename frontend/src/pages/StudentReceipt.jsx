@@ -141,14 +141,212 @@ const StudentReceiptModal = ({
 
     const styles = `
       <style>
-        @page { size: auto; margin: 0; }
-        body { margin: 0; font-family: 'Segoe UI', Helvetica, Arial, sans-serif; color: #111827; }
+        /* Thermal printer optimized styles */
+        @page { 
+          size: 80mm auto; 
+          margin: 2mm 3mm; 
+        }
+        *, *::before, *::after {
+          box-shadow: none !important;
+          text-shadow: none !important;
+        }
+        html, body { 
+          width: 80mm !important;
+          max-width: 80mm !important;
+          margin: 0 !important; 
+          padding: 0 !important;
+          /* Use bold-friendly fonts for thermal printing */
+          font-family: 'Arial Black', 'Helvetica Bold', 'Arial', sans-serif !important; 
+          font-size: 11px !important;
+          font-weight: 700 !important;
+          line-height: 1.4 !important;
+          color: #000 !important; 
+          background: #fff !important;
+          -webkit-font-smoothing: none !important;
+        }
         .no-print { display: none !important; }
+        .thermal-receipt {
+          width: 100% !important;
+          max-width: 74mm !important;
+          margin: 0 auto !important;
+          padding: 2mm !important;
+          font-weight: 700 !important;
+        }
+        .thermal-header {
+          text-align: center !important;
+          border-bottom: 2px solid #000 !important;
+          padding-bottom: 3mm !important;
+          margin-bottom: 3mm !important;
+        }
+        .thermal-header h2 {
+          font-size: 13px !important;
+          font-weight: 900 !important;
+          margin: 0 0 1mm 0 !important;
+          text-transform: uppercase !important;
+          letter-spacing: 0.5px !important;
+        }
+        .thermal-header p {
+          font-size: 10px !important;
+          font-weight: 700 !important;
+          margin: 0 !important;
+        }
+        .thermal-info {
+          border-bottom: 2px solid #000 !important;
+          padding-bottom: 2mm !important;
+          margin-bottom: 2mm !important;
+        }
+        .thermal-info p {
+          font-size: 10px !important;
+          font-weight: 700 !important;
+          margin: 1mm 0 !important;
+          display: flex !important;
+          justify-content: space-between !important;
+        }
+        .thermal-items {
+          margin: 2mm 0 !important;
+        }
+        .thermal-items table {
+          width: 100% !important;
+          font-weight: 700 !important;
+          border-collapse: collapse !important;
+          font-size: 9px !important;
+        }
+        .thermal-items th, .thermal-items td {
+          padding: 1.5mm 0.5mm !important;
+          text-align: left !important;
+          border: none !important;
+          vertical-align: top !important;
+          font-weight: 700 !important;
+        }
+        .thermal-items th:last-child, .thermal-items td:last-child {
+          text-align: right !important;
+        }
+        .thermal-items th {
+          border-bottom: 2px solid #000 !important;
+          font-weight: 900 !important;
+          font-size: 10px !important;
+        }
+        .thermal-items tbody tr {
+          border-bottom: 1px solid #000 !important;
+        }
+        /* Remove border for single item */
+        .thermal-items tbody tr.single-item,
+        .thermal-items tbody tr:only-child {
+          border-bottom: none !important;
+        }
+        .thermal-total {
+          border-top: 2px solid #000 !important;
+          padding-top: 2mm !important;
+          margin-top: 2mm !important;
+          display: flex !important;
+          justify-content: space-between !important;
+          font-weight: 900 !important;
+          font-size: 12px !important;
+        }
+        .thermal-payment {
+          margin-top: 2mm !important;
+          padding-top: 2mm !important;
+          border-top: 2px solid #000 !important;
+          font-size: 10px !important;
+          font-weight: 700 !important;
+        }
+        .thermal-payment p {
+          margin: 1mm 0 !important;
+          display: flex !important;
+          justify-content: space-between !important;
+          font-weight: 700 !important;
+        }
+        .thermal-footer {
+          text-align: center !important;
+          margin-top: 3mm !important;
+          padding-top: 2mm !important;
+          border-top: 2px solid #000 !important;
+          font-size: 9px !important;
+          font-weight: 700 !important;
+        }
+        .set-items {
+          margin-left: 2mm !important;
+          font-size: 9px !important;
+          font-weight: 600 !important;
+          color: #000 !important;
+        }
+        .set-items li {
+          margin: 0.5mm 0 !important;
+        }
       </style>
     `;
 
-    const receiptContent = node.innerHTML;
-    printWindow.document.write(`<!doctype html><html><head><title>Receipt-${student?.studentId || 'student'}</title>${styles}</head><body>${receiptContent}</body></html>`);
+    // Generate thermal-optimized receipt content
+    const itemsList = (transactionItems.length > 0 ? transactionItems : savedTransactionItems);
+    const total = transactionItems.length > 0 ? totalAmount : savedPaymentInfo.totalAmount;
+    const method = transactionItems.length > 0 ? paymentMethod : savedPaymentInfo.paymentMethod;
+    const paid = transactionItems.length > 0 ? isPaid : savedPaymentInfo.isPaid;
+    const note = transactionItems.length > 0 ? remarks : savedPaymentInfo.remarks;
+
+    const thermalReceiptContent = `
+      <div class="thermal-receipt">
+        <div class="thermal-header">
+          <h2>${receiptConfig.receiptHeader}</h2>
+          <p>${receiptConfig.receiptSubheader}</p>
+          <p style="margin-top: 2mm; font-size: 8px;">
+            ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          </p>
+        </div>
+        <div class="thermal-info">
+          <p><span>Name:</span> <span>${student?.name || 'N/A'}</span></p>
+          <p><span>ID:</span> <span>${student?.studentId || 'N/A'}</span></p>
+          <p><span>Course:</span> <span>${student?.course?.toUpperCase() || 'N/A'}</span></p>
+          <p><span>Year:</span> <span>${student?.year || 'N/A'}</span></p>
+          ${student?.branch ? `<p><span>Branch:</span> <span>${student.branch}</span></p>` : ''}
+        </div>
+        <div class="thermal-items">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 50%">Item</th>
+                <th style="width: 15%; text-align: center">Qty</th>
+                <th style="width: 17%; text-align: right">Rate</th>
+                <th style="width: 18%; text-align: right">Amt</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsList.map((item, idx, arr) => `
+                <tr class="${arr.length === 1 ? 'single-item' : ''}">
+                  <td>
+                    ${item.name}
+                    ${item.isSet && item.setComponents?.length > 0 ? `
+                      <ul class="set-items" style="list-style: none; padding: 0; margin: 1mm 0 0 2mm;">
+                        ${item.setComponents.map(c => `<li>- ${c.name} ×${c.quantity}</li>`).join('')}
+                      </ul>
+                    ` : ''}
+                  </td>
+                  <td style="text-align: center">${item.quantity}</td>
+                  <td style="text-align: right">₹${item.price.toFixed(0)}</td>
+                  <td style="text-align: right">₹${item.total.toFixed(0)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="thermal-total">
+          <span>TOTAL:</span>
+          <span>₹${total.toFixed(2)}</span>
+        </div>
+        <div class="thermal-payment">
+          <p><span>Payment:</span> <span>${method === 'cash' ? 'CASH' : 'ONLINE'}</span></p>
+          <p><span>Status:</span> <span>${paid ? 'PAID' : 'UNPAID'}</span></p>
+          ${note ? `<p style="display: block"><span>Note: ${note}</span></p>` : ''}
+        </div>
+        <div class="thermal-footer">
+          <p>--------------------------------</p>
+          <p>Thank you for your purchase!</p>
+          <p>Keep this receipt for records</p>
+          <p>--------------------------------</p>
+        </div>
+      </div>
+    `;
+
+    printWindow.document.write(`<!doctype html><html><head><title>Receipt-${student?.studentId || 'student'}</title>${styles}</head><body>${thermalReceiptContent}</body></html>`);
     printWindow.document.close();
     
     // Wait for content to load before printing
@@ -806,86 +1004,148 @@ const hasHiddenItems = useMemo(() => {
           )}
           </div>
 
-          {/* Full Receipt Section for Printing */}
+          {/* Thermal Printer Optimized Receipt Section */}
           {(transactionItems.length > 0 || savedTransactionItems.length > 0) && (
-            <div className="border-t-2 border-gray-300 pt-6 px-6 pb-4 hidden print:block">
-              <h3 className="text-base font-semibold text-gray-900 mb-3">Items Issued</h3>
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="bg-gray-50">
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-b border-gray-200">Item Name</th>
-                    <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700 border-b border-gray-200">Quantity</th>
-                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700 border-b border-gray-200">Unit Price</th>
-                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700 border-b border-gray-200">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(transactionItems.length > 0 ? transactionItems : savedTransactionItems).map((item, idx) => (
-                    <tr key={idx} className="border-b border-gray-100">
-                      <td className="px-3 py-2 text-sm text-gray-900">
-                        <span className="font-medium">{item.name}</span>
-                        {item.isSet && item.setComponents?.length > 0 && (
-                          <ul className="mt-1 text-xs text-gray-600">
-                            {item.setComponents.map((component, componentIdx) => (
-                              <li key={`${item.name}-component-print-${componentIdx}`} className="flex justify-between">
-                                <span>{component.name}</span>
-                                <span className="ml-2">× {component.quantity}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-sm text-center text-gray-900">{item.quantity}</td>
-                      <td className="px-3 py-2 text-sm text-right text-gray-900">₹{item.price.toFixed(2)}</td>
-                      <td className="px-3 py-2 text-sm text-right font-semibold text-gray-900">₹{item.total.toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              
-              <div className="flex justify-between items-center mt-4 pt-4 border-t-2 border-gray-900">
-                <span className="text-base font-bold text-gray-900">Total Amount:</span>
-                <span className="text-base font-bold text-gray-900">
-                  ₹{(transactionItems.length > 0 ? totalAmount : savedPaymentInfo.totalAmount).toFixed(2)}
-                </span>
+            <div className="hidden print:block thermal-receipt" data-thermal-print="true">
+              {/* Thermal Header */}
+              <div className="thermal-header">
+                <h2>{receiptConfig.receiptHeader}</h2>
+                <p>{receiptConfig.receiptSubheader}</p>
+                <p style={{ marginTop: '2mm', fontSize: '8px' }}>
+                  {new Date().toLocaleDateString('en-IN', { 
+                    day: '2-digit', 
+                    month: '2-digit', 
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </p>
               </div>
 
-              <div className="mt-4 text-sm text-gray-600 space-y-1">
+              {/* Student Info */}
+              <div className="thermal-info">
+                <p><span>Name:</span> <span>{student?.name || 'N/A'}</span></p>
+                <p><span>ID:</span> <span>{student?.studentId || 'N/A'}</span></p>
+                <p><span>Course:</span> <span>{student?.course?.toUpperCase() || 'N/A'}</span></p>
+                <p><span>Year:</span> <span>{student?.year || 'N/A'}</span></p>
+                {student?.branch && <p><span>Branch:</span> <span>{student.branch}</span></p>}
+              </div>
+
+              {/* Items Table */}
+              <div className="thermal-items">
+                <table>
+                  <thead>
+                    <tr>
+                      <th style={{ width: '50%' }}>Item</th>
+                      <th style={{ width: '15%', textAlign: 'center' }}>Qty</th>
+                      <th style={{ width: '17%', textAlign: 'right' }}>Rate</th>
+                      <th style={{ width: '18%', textAlign: 'right' }}>Amt</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(transactionItems.length > 0 ? transactionItems : savedTransactionItems).map((item, idx, arr) => (
+                      <tr key={idx} className={arr.length === 1 ? 'single-item' : ''}>
+                        <td>
+                          {item.name}
+                          {item.isSet && item.setComponents?.length > 0 && (
+                            <ul className="set-items" style={{ listStyle: 'none', padding: 0, margin: '1mm 0 0 2mm' }}>
+                              {item.setComponents.map((component, componentIdx) => (
+                                <li key={`thermal-${item.name}-${componentIdx}`}>
+                                  - {component.name} ×{component.quantity}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>{item.quantity}</td>
+                        <td style={{ textAlign: 'right' }}>₹{item.price.toFixed(0)}</td>
+                        <td style={{ textAlign: 'right' }}>₹{item.total.toFixed(0)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Total */}
+              <div className="thermal-total">
+                <span>TOTAL:</span>
+                <span>₹{(transactionItems.length > 0 ? totalAmount : savedPaymentInfo.totalAmount).toFixed(2)}</span>
+              </div>
+
+              {/* Payment Info */}
+              <div className="thermal-payment">
                 <p>
-                  <span className="font-semibold">Payment Method:</span> {(transactionItems.length > 0 ? paymentMethod : savedPaymentInfo.paymentMethod) === 'cash' ? 'Cash' : 'Online'}
+                  <span>Payment:</span>
+                  <span>{(transactionItems.length > 0 ? paymentMethod : savedPaymentInfo.paymentMethod) === 'cash' ? 'CASH' : 'ONLINE'}</span>
                 </p>
                 <p>
-                  <span className="font-semibold">Payment Status:</span> {(transactionItems.length > 0 ? isPaid : savedPaymentInfo.isPaid) ? 'Paid' : 'Unpaid'}
+                  <span>Status:</span>
+                  <span>{(transactionItems.length > 0 ? isPaid : savedPaymentInfo.isPaid) ? 'PAID' : 'UNPAID'}</span>
                 </p>
                 {(transactionItems.length > 0 ? remarks : savedPaymentInfo.remarks) && (
-                  <p>
-                    <span className="font-semibold">Remarks:</span> {transactionItems.length > 0 ? remarks : savedPaymentInfo.remarks}
+                  <p style={{ display: 'block' }}>
+                    <span>Note: {transactionItems.length > 0 ? remarks : savedPaymentInfo.remarks}</span>
                   </p>
                 )}
+              </div>
+
+              {/* Footer */}
+              <div className="thermal-footer">
+                <p>--------------------------------</p>
+                <p>Thank you for your purchase!</p>
+                <p>Keep this receipt for records</p>
+                <p>--------------------------------</p>
               </div>
             </div>
           )}
         </div>
 
         {/* Footer Actions */}
-        <div className="border-t border-blue-100 bg-gradient-to-r from-blue-50 to-blue-100 px-5 py-3 flex justify-end gap-3 rounded-b-2xl no-print">
-          <button 
-            onClick={handleSaveTransaction} 
-            disabled={transactionItems.length === 0 || saving}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-semibold text-sm flex items-center gap-2 transition-all shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
-          >
-            {saving ? (
+        <div className="border-t border-blue-100 bg-gradient-to-r from-blue-50 to-blue-100 px-5 py-3 flex justify-between rounded-b-2xl no-print">
+          {/* Left side - Print/Download buttons (show after transaction saved) */}
+          <div className="flex gap-2">
+            {savedTransactionItems.length > 0 && (
               <>
-                <Loader2 size={16} className="animate-spin" />
-                Saving...
-              </>
-            ) : (
-              <>
-                <Save size={16} />
-                Save Transaction
+                <button 
+                  onClick={handlePrint}
+                  className="px-4 py-2.5 bg-green-600 hover:bg-green-500 text-white rounded-xl font-semibold text-sm flex items-center gap-2 transition-all shadow-lg hover:shadow-xl"
+                  title="Print Receipt (Thermal Printer)"
+                >
+                  <Printer size={16} />
+                  Print Receipt
+                </button>
+                <button 
+                  onClick={handleDownload}
+                  className="px-4 py-2.5 bg-gray-600 hover:bg-gray-500 text-white rounded-xl font-semibold text-sm flex items-center gap-2 transition-all shadow-lg hover:shadow-xl"
+                  title="Download as PDF"
+                >
+                  <Download size={16} />
+                  Download PDF
+                </button>
               </>
             )}
-          </button>
+          </div>
+          
+          {/* Right side - Save button */}
+          <div className="flex gap-3">
+            <button 
+              onClick={handleSaveTransaction} 
+              disabled={transactionItems.length === 0 || saving}
+              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-semibold text-sm flex items-center gap-2 transition-all shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
+            >
+              {saving ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save size={16} />
+                  Save Transaction
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>

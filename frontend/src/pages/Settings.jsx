@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Save, Settings as SettingsIcon, ChevronDown, ChevronUp, Receipt, GraduationCap, Monitor } from 'lucide-react';
 import { apiUrl } from '../utils/api';
+import { removeStoredItem } from '../utils/storage';
+
+// Helper to invalidate config cache so other components fetch fresh data
+const invalidateConfigCache = () => {
+  removeStoredItem('configCache');
+  removeStoredItem('configCacheTimestamp');
+};
 
 const defaultSettings = {
   appName: 'PYDAH COLLEGE OF ENGINEERING',
@@ -174,6 +181,10 @@ const Settings = () => {
         receiptHeader: data.receiptHeader || defaultSettings.receiptHeader,
         receiptSubheader: data.receiptSubheader || defaultSettings.receiptSubheader,
       });
+      
+      // Clear config cache so other pages fetch fresh data
+      invalidateConfigCache();
+      
       setFeedback({ type: 'success', message: 'Receipt settings updated successfully.' });
     } catch (error) {
       console.error('Error updating settings:', error);
@@ -220,6 +231,25 @@ const Settings = () => {
 
       const data = await response.json();
       setConfig(data);
+      
+      // Update courseForms with the saved data to reflect changes immediately
+      if (data.courses && Array.isArray(data.courses)) {
+        const updatedForms = {};
+        data.courses.forEach(course => {
+          const id = course._id || course.name || String(course);
+          if (id) {
+            updatedForms[id] = {
+              receiptHeader: course.receiptHeader || '',
+              receiptSubheader: course.receiptSubheader || '',
+            };
+          }
+        });
+        setCourseForms(updatedForms);
+      }
+      
+      // Clear config cache so other pages fetch fresh data
+      invalidateConfigCache();
+      
       setFeedback({ type: 'success', message: 'Course receipt settings updated successfully.' });
     } catch (error) {
       console.error('Error updating course settings:', error);

@@ -25,6 +25,10 @@ const StudentDetail = ({
   const [avatarFailed, setAvatarFailed] = useState(false);
   const [componentUpdating, setComponentUpdating] = useState('');
   const [componentUpdateStatus, setComponentUpdateStatus] = useState({ type: '', message: '' });
+  const [receiptConfig, setReceiptConfig] = useState({
+    receiptHeader: 'PYDAH GROUP OF INSTITUTIONS',
+    receiptSubheader: 'Stationery Management System',
+  });
 
   const normalizeCourse = (value) => {
     if (!value) return '';
@@ -48,6 +52,31 @@ const StudentDetail = ({
     setStudent(s || null);
     setAvatarFailed(false);
   }, [id, students]);
+
+  // Fetch course-specific receipt settings
+  useEffect(() => {
+    if (!student?.course) return;
+    
+    let isMounted = true;
+    const fetchReceiptSettings = async () => {
+      try {
+        const url = apiUrl(`/api/settings?course=${encodeURIComponent(student.course)}`);
+        const response = await fetch(url);
+        if (response.ok && isMounted) {
+          const data = await response.json();
+          setReceiptConfig({
+            receiptHeader: data.receiptHeader || 'PYDAH GROUP OF INSTITUTIONS',
+            receiptSubheader: data.receiptSubheader || 'Stationery Management System',
+          });
+        }
+      } catch (error) {
+        console.warn('Could not load receipt settings:', error.message || error);
+      }
+    };
+
+    fetchReceiptSettings();
+    return () => { isMounted = false; };
+  }, [student?.course]);
 
   const lastFetchedStudentId = useRef(null);
   const transactionsCache = useRef(new Map());
@@ -880,164 +909,233 @@ const StudentDetail = ({
                             )}
                           </div>
 
-                          {/* Print Content - Hidden on screen, visible when printing */}
-                          <div ref={transactionRef} className="hidden print:block">
+                          {/* Print Content - Thermal Printer Optimized */}
+                          <div ref={transactionRef} className="hidden print:block thermal-receipt" data-thermal-print="true">
                             <style>{`
+                              /* Thermal Printer Optimized - 80mm paper */
                               @page {
-                                size: A4;
-                                margin: 20mm;
+                                size: 80mm auto;
+                                margin: 2mm 3mm;
                               }
                               @media print {
-                                body {
-                                  margin: 0;
-                                  padding: 0;
-                                  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                                *, *::before, *::after {
+                                  box-shadow: none !important;
+                                  text-shadow: none !important;
                                 }
-                                .print-header {
-                                  border-bottom: 3px solid #1e40af;
-                                  padding-bottom: 15px;
-                                  margin-bottom: 20px;
+                                html, body {
+                                  width: 80mm !important;
+                                  max-width: 80mm !important;
+                                  margin: 0 !important;
+                                  padding: 0 !important;
+                                  /* Use bold-friendly fonts for thermal printing */
+                                  font-family: 'Arial Black', 'Helvetica Bold', 'Arial', sans-serif !important;
+                                  font-size: 11px !important;
+                                  font-weight: 700 !important;
+                                  line-height: 1.4 !important;
+                                  color: #000 !important;
+                                  background: #fff !important;
+                                  -webkit-print-color-adjust: exact !important;
+                                  print-color-adjust: exact !important;
+                                  -webkit-font-smoothing: none !important;
                                 }
-                                .print-content {
-                                  margin-top: 20px;
+                                .thermal-receipt {
+                                  width: 100% !important;
+                                  max-width: 74mm !important;
+                                  margin: 0 auto !important;
+                                  padding: 2mm !important;
+                                  font-weight: 700 !important;
                                 }
-                                .print-table {
-                                  width: 100%;
-                                  border-collapse: collapse;
-                                  margin: 20px 0;
+                                .thermal-header {
+                                  text-align: center !important;
+                                  border-bottom: 2px solid #000 !important;
+                                  padding-bottom: 2mm !important;
+                                  margin-bottom: 2mm !important;
                                 }
-                                .print-table th,
-                                .print-table td {
-                                  padding: 10px;
-                                  text-align: left;
-                                  border-bottom: 1px solid #e5e7eb;
+                                .thermal-header h1 {
+                                  font-size: 13px !important;
+                                  font-weight: 900 !important;
+                                  margin: 0 0 1mm 0 !important;
+                                  text-transform: uppercase !important;
+                                  letter-spacing: 0.5px !important;
                                 }
-                                .print-table th {
-                                  background-color: #f3f4f6;
-                                  font-weight: 600;
-                                  color: #111827;
+                                .thermal-header p {
+                                  font-size: 10px !important;
+                                  font-weight: 700 !important;
+                                  margin: 0 !important;
                                 }
-                                .print-footer {
-                                  margin-top: 30px;
-                                  padding-top: 15px;
-                                  border-top: 2px solid #1e40af;
+                                .thermal-info {
+                                  border-bottom: 2px solid #000 !important;
+                                  padding-bottom: 2mm !important;
+                                  margin-bottom: 2mm !important;
+                                }
+                                .thermal-info p {
+                                  font-size: 10px !important;
+                                  font-weight: 700 !important;
+                                  margin: 1mm 0 !important;
+                                  display: flex !important;
+                                  justify-content: space-between !important;
+                                }
+                                .thermal-table {
+                                  width: 100% !important;
+                                  border-collapse: collapse !important;
+                                  font-size: 10px !important;
+                                  font-weight: 700 !important;
+                                  margin: 2mm 0 !important;
+                                }
+                                .thermal-table th,
+                                .thermal-table td {
+                                  padding: 1.5mm 0.5mm !important;
+                                  text-align: left !important;
+                                  border: none !important;
+                                  vertical-align: top !important;
+                                  font-weight: 700 !important;
+                                }
+                                .thermal-table th {
+                                  border-bottom: 2px solid #000 !important;
+                                  font-weight: 900 !important;
+                                  font-size: 10px !important;
+                                }
+                                .thermal-table tbody tr {
+                                  border-bottom: 1px solid #000 !important;
+                                }
+                                /* Remove border for single item */
+                                .thermal-table tbody tr.single-item,
+                                .thermal-table tbody tr:only-child {
+                                  border-bottom: none !important;
+                                }
+                                .thermal-table th:last-child,
+                                .thermal-table td:last-child {
+                                  text-align: right !important;
+                                }
+                                .thermal-total {
+                                  border-top: 2px solid #000 !important;
+                                  padding-top: 2mm !important;
+                                  margin-top: 2mm !important;
+                                  display: flex !important;
+                                  justify-content: space-between !important;
+                                  font-weight: 900 !important;
+                                  font-size: 12px !important;
+                                }
+                                .thermal-payment {
+                                  margin-top: 2mm !important;
+                                  padding-top: 2mm !important;
+                                  border-top: 2px solid #000 !important;
+                                  font-size: 10px !important;
+                                  font-weight: 700 !important;
+                                }
+                                .thermal-payment p {
+                                  margin: 1mm 0 !important;
+                                  display: flex !important;
+                                  justify-content: space-between !important;
+                                  font-weight: 700 !important;
+                                }
+                                .thermal-footer {
+                                  text-align: center !important;
+                                  margin-top: 3mm !important;
+                                  padding-top: 2mm !important;
+                                  border-top: 2px solid #000 !important;
+                                  font-size: 9px !important;
+                                  font-weight: 700 !important;
+                                }
+                                .set-components {
+                                  margin: 1mm 0 0 2mm !important;
+                                  font-size: 9px !important;
+                                  font-weight: 600 !important;
+                                  list-style: none !important;
+                                  padding: 0 !important;
+                                }
+                                .set-components li {
+                                  margin: 0.5mm 0 !important;
+                                }
+                                .no-print {
+                                  display: none !important;
                                 }
                               }
                             `}</style>
-                            <div className="print-header">
-                              <div style={{ textAlign: 'center', marginBottom: '10px' }}>
-                                <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: '#1e40af', margin: '0 0 5px 0' }}>
-                                  PYDAH GROUP OF INSTITUTIONS
-                                </h1>
-                                <p style={{ fontSize: '14px', color: '#6b7280', margin: '0' }}>
-                                  Stationery Management System
-                                </p>
-                              </div>
+                            
+                            {/* Thermal Header */}
+                            <div className="thermal-header">
+                              <h1>{receiptConfig.receiptHeader}</h1>
+                              <p>{receiptConfig.receiptSubheader}</p>
+                              <p style={{ marginTop: '1mm', fontSize: '7px' }}>
+                                {new Date(transaction.transactionDate || transaction.createdAt || Date.now()).toLocaleDateString('en-IN', { 
+                                  day: '2-digit', 
+                                  month: '2-digit', 
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </p>
                             </div>
 
-                            <div className="print-content">
-                              <div style={{ marginBottom: '20px' }}>
-                                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#111827', marginBottom: '15px' }}>
-                                  Transaction Receipt
-                                </h2>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', fontSize: '12px', marginBottom: '20px' }}>
-                                  <div>
-                                    <p style={{ margin: '5px 0' }}><strong>Student Name:</strong> {transaction.student?.name || student.name}</p>
-                                    <p style={{ margin: '5px 0' }}><strong>Student ID:</strong> {transaction.student?.studentId || student.studentId}</p>
-                                  </div>
-                                  <div>
-                                    <p style={{ margin: '5px 0' }}><strong>Course:</strong> {transaction.student?.course?.toUpperCase() || student.course.toUpperCase()}</p>
-                                    <p style={{ margin: '5px 0' }}><strong>Year:</strong> {transaction.student?.year || student.year}</p>
-                                    {/* <p style={{ margin: '5px 0' }}><strong>Date:</strong> {new Date(transaction.transactionDate || transaction.createdAt || Date.now()).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p> */}
-                                  </div>
-                                </div>
-                              </div>
+                            {/* Student Info */}
+                            <div className="thermal-info">
+                              <p><span>Name:</span> <span>{transaction.student?.name || student.name}</span></p>
+                              <p><span>ID:</span> <span>{transaction.student?.studentId || student.studentId}</span></p>
+                              <p><span>Course:</span> <span>{(transaction.student?.course || student.course)?.toUpperCase()}</span></p>
+                              <p><span>Year:</span> <span>{transaction.student?.year || student.year}</span></p>
+                            </div>
 
-                              <table className="print-table">
-                                <thead>
-                                  <tr>
-                                    <th style={{ width: '40%' }}>Item Name</th>
-                                    <th style={{ width: '15%', textAlign: 'center' }}>Quantity</th>
-                                    <th style={{ width: '20%', textAlign: 'right' }}>Unit Price</th>
-                                    <th style={{ width: '25%', textAlign: 'right' }}>Total</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {transaction.items && transaction.items.map((item, idx) => (
-                                    <tr key={idx}>
-                                      <td>
-                                        <span style={{ display: 'block', fontWeight: 600 }}>{item.name}</span>
-                                        {(item.isSet || item.status === 'partial') && (
-                                          <span
-                                            style={{
-                                              display: 'inline-block',
-                                              marginTop: '4px',
-                                              fontSize: '11px',
-                                              fontWeight: 600,
-                                              color: item.status === 'partial' ? '#b45309' : '#047857',
-                                            }}
-                                          >
-                                            {item.status === 'partial' ? 'Partial' : 'Fulfilled'}
-                                          </span>
-                                        )}
-                                        {item.isSet && item.setComponents?.length > 0 && (
-                                          <ul style={{ margin: '6px 0 0', paddingLeft: '12px', fontSize: '11px', color: '#4b5563' }}>
-                                            {item.setComponents.map((component, componentIdx) => (
-                                              <li
-                                                key={`${item.name}-component-print-${componentIdx}`}
-                                                style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}
-                                              >
-                                                <span>{component.name}</span>
-                                                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                  <span style={{ fontWeight: 600 }}>× {component.quantity}</span>
-                                                  {component.taken === false && (
-                                                    <span style={{ textTransform: 'uppercase', fontWeight: 700, color: '#dc2626' }}>
-                                                      Not Taken
-                                                    </span>
-                                                  )}
-                                                </span>
-                                              </li>
-                                            ))}
-                                          </ul>
-                                        )}
-                                      </td>
-                                      <td style={{ textAlign: 'center' }}>{item.quantity}</td>
-                                      <td style={{ textAlign: 'right' }}>₹{Number(item.price).toFixed(2)}</td>
-                                      <td style={{ textAlign: 'right', fontWeight: '600' }}>₹{Number(item.total).toFixed(2)}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                                <tfoot>
-                                  <tr style={{ borderTop: '2px solid #1e40af' }}>
-                                    <td colSpan="3" style={{ textAlign: 'right', fontWeight: 'bold', fontSize: '14px', paddingTop: '15px' }}>
-                                      Total Amount:
+                            {/* Items Table */}
+                            <table className="thermal-table">
+                              <thead>
+                                <tr>
+                                  <th style={{ width: '50%' }}>Item</th>
+                                  <th style={{ width: '12%', textAlign: 'center' }}>Qty</th>
+                                  <th style={{ width: '18%', textAlign: 'right' }}>Rate</th>
+                                  <th style={{ width: '20%', textAlign: 'right' }}>Amt</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {transaction.items && transaction.items.map((item, idx, arr) => (
+                                  <tr key={idx} className={arr.length === 1 ? 'single-item' : ''}>
+                                    <td>
+                                      {item.name}
+                                      {(item.isSet || item.status === 'partial') && (
+                                        <span style={{ fontSize: '7px', fontWeight: 'bold' }}>
+                                          {' '}[{item.status === 'partial' ? 'Partial' : 'Set'}]
+                                        </span>
+                                      )}
+                                      {item.isSet && item.setComponents?.length > 0 && (
+                                        <ul className="set-components">
+                                          {item.setComponents.map((component, componentIdx) => (
+                                            <li key={`${item.name}-component-print-${componentIdx}`}>
+                                              - {component.name} ×{component.quantity}
+                                              {component.taken === false && ' [NOT TAKEN]'}
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      )}
                                     </td>
-                                    <td style={{ textAlign: 'right', fontWeight: 'bold', fontSize: '16px', paddingTop: '15px' }}>
-                                      ₹{Number(transaction.totalAmount).toFixed(2)}
-                                    </td>
+                                    <td style={{ textAlign: 'center' }}>{item.quantity}</td>
+                                    <td style={{ textAlign: 'right' }}>₹{Number(item.price).toFixed(0)}</td>
+                                    <td style={{ textAlign: 'right' }}>₹{Number(item.total).toFixed(0)}</td>
                                   </tr>
-                                </tfoot>
-                              </table>
+                                ))}
+                              </tbody>
+                            </table>
 
-                              <div style={{ marginTop: '20px', fontSize: '12px' }}>
-                                <p style={{ margin: '5px 0' }}><strong>Payment Method:</strong> {transaction.paymentMethod === 'cash' ? 'Cash' : 'Online'}</p>
-                                <p style={{ margin: '5px 0' }}>
-                                  <strong>Payment Status:</strong>
-                                  <span style={{ color: transaction.isPaid ? '#059669' : '#dc2626', fontWeight: '600', marginLeft: '5px' }}>
-                                    {transaction.isPaid ? 'Paid' : 'Unpaid'}
-                                  </span>
-                                </p>
-                                {transaction.remarks && (
-                                  <p style={{ margin: '5px 0' }}><strong>Remarks:</strong> {transaction.remarks}</p>
-                                )}
-                              </div>
+                            {/* Total */}
+                            <div className="thermal-total">
+                              <span>TOTAL:</span>
+                              <span>₹{Number(transaction.totalAmount).toFixed(2)}</span>
+                            </div>
 
-                              <div className="print-footer">
-                                <p style={{ fontSize: '11px', color: '#6b7280', textAlign: 'center', margin: '0' }}>
-                                  Generated on {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })} |
-                                  This is a system generated receipt
-                                </p>
-                              </div>
+                            {/* Payment Info */}
+                            <div className="thermal-payment">
+                              <p><span>Payment:</span> <span>{transaction.paymentMethod === 'cash' ? 'CASH' : 'ONLINE'}</span></p>
+                              <p><span>Status:</span> <span>{transaction.isPaid ? 'PAID' : 'UNPAID'}</span></p>
+                              {transaction.remarks && (
+                                <p style={{ display: 'block' }}><span>Note: {transaction.remarks}</span></p>
+                              )}
+                            </div>
+
+                            {/* Footer */}
+                            <div className="thermal-footer">
+                              <p>--------------------------------</p>
+                              <p>Thank you for your purchase!</p>
+                              <p>💖 PydahSoft 💖</p>
+                              <p>--------------------------------</p>
                             </div>
                           </div>
                         </div>
