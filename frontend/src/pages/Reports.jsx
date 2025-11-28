@@ -1818,11 +1818,16 @@ const Reports = () => {
                             type="checkbox"
                             id="includeSummary"
                             checked={reportFilters.includeSummary}
-                            onChange={(e) => setReportFilters({ ...reportFilters, includeSummary: e.target.checked })}
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            onChange={(e) => setReportFilters({ 
+                              ...reportFilters, 
+                              includeSummary: e.target.checked,
+                              onlyStatistics: e.target.checked ? false : reportFilters.onlyStatistics
+                            })}
+                            disabled={reportFilters.onlyStatistics}
+                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                           />
-                          <label htmlFor="includeSummary" className="text-sm font-medium text-gray-700 cursor-pointer">
-                            Include summary statistics
+                          <label htmlFor="includeSummary" className={`text-sm font-medium cursor-pointer ${reportFilters.onlyStatistics ? 'text-gray-400' : 'text-gray-700'}`}>
+                            Include summary statistics (with transaction details table)
                           </label>
                         </div>
                         <div className="flex items-center gap-2">
@@ -1841,7 +1846,7 @@ const Reports = () => {
                             className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                           />
                           <label htmlFor="onlyStatistics" className="text-sm font-medium text-gray-700 cursor-pointer">
-                            Generate statistics only (no detailed tables)
+                            Statistics only mode (no transaction details table)
                           </label>
                         </div>
                         <div className="flex items-center gap-2">
