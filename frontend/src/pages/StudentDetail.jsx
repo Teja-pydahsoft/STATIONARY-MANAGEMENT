@@ -1070,7 +1070,7 @@ const StudentDetail = ({
                             {/* Student Info */}
                             <div className="thermal-info">
                               <p><span>Name:</span> <span>{transaction.student?.name || student.name}</span></p>
-                              <p><span>ID: {transaction.student?.studentId || student.studentId}</span> <span>{(transaction.student?.course || student.course)?.toUpperCase()} | Year {transaction.student?.year || student.year}</span></p>
+                              <p><span>ID: {transaction.student?.studentId || student.studentId}</span> <span>{(transaction.student?.course || student.course)?.toUpperCase()}{((transaction.student?.branch || student.branch) ? ` | ${transaction.student?.branch || student.branch}` : '')} | Year {transaction.student?.year || student.year}</span></p>
                             </div>
 
                             {/* Items Table */}
