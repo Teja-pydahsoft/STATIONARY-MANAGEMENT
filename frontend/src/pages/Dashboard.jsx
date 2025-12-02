@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { 
   Users, GraduationCap, Package, ShoppingCart, DollarSign, 
   TrendingUp, AlertCircle, Activity, Calendar, ArrowRight,
-  CreditCard, Wallet, TrendingDown, FileText, BarChart3, Lock
+  CreditCard, Wallet, TrendingDown, FileText, BarChart3, Lock, X
 } from 'lucide-react';
 import { apiUrl } from '../utils/api';
 
@@ -29,6 +29,9 @@ const Dashboard = () => {
     todayRevenue: 0,
   });
   const [recentTransactions, setRecentTransactions] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [vendors, setVendors] = useState([]);
+  const [activeModal, setActiveModal] = useState(null); // 'products', 'stockValue', 'lowStock', 'vendors'
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -113,9 +116,10 @@ const Dashboard = () => {
         let totalStockValue = 0;
         let lowStockItems = 0;
         if (productsRes.ok) {
-          const products = await productsRes.json();
-          totalProducts = products.length;
-          products.forEach(product => {
+          const productsData = await productsRes.json();
+          setProducts(Array.isArray(productsData) ? productsData : []);
+          totalProducts = productsData.length;
+          productsData.forEach(product => {
             const stockValue = (product.stock || 0) * (product.price || 0);
             totalStockValue += stockValue;
             const threshold = typeof product.lowStockThreshold === 'number' ? product.lowStockThreshold : 10;
@@ -128,8 +132,9 @@ const Dashboard = () => {
         // Process vendors
         let totalVendors = 0;
         if (vendorsRes.ok) {
-          const vendors = await vendorsRes.json();
-          totalVendors = vendors.length;
+          const vendorsData = await vendorsRes.json();
+          setVendors(Array.isArray(vendorsData) ? vendorsData : []);
+          totalVendors = vendorsData.length;
         }
 
         setStats({
@@ -171,6 +176,18 @@ const Dashboard = () => {
       minute: '2-digit',
     });
   };
+
+  // Calculate low stock products
+  const lowStockProducts = products.filter(product => {
+    const threshold = typeof product.lowStockThreshold === 'number' ? product.lowStockThreshold : 10;
+    return (product.stock || 0) < threshold;
+  });
+
+  // Calculate products with stock value
+  const productsWithValue = products.map(product => ({
+    ...product,
+    stockValue: (product.stock || 0) * (product.price || 0),
+  })).sort((a, b) => b.stockValue - a.stockValue);
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -259,62 +276,78 @@ const Dashboard = () => {
         {/* Secondary Statistics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           {/* Total Products */}
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+          <div 
+            onClick={() => setActiveModal('products')}
+            className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md hover:border-blue-300 transition-all cursor-pointer"
+          >
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
                 <Package size={24} className="text-blue-600" />
               </div>
-              <div>
+              <div className="flex-1">
                 <div className="text-2xl font-bold text-gray-900">
                   {loading ? '...' : stats.totalProducts}
                 </div>
                 <div className="text-sm text-gray-600">Total Products</div>
               </div>
+              <ArrowRight size={20} className="text-gray-400" />
             </div>
           </div>
 
           {/* Stock Value */}
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+          <div 
+            onClick={() => setActiveModal('stockValue')}
+            className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md hover:border-green-300 transition-all cursor-pointer"
+          >
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
                 <BarChart3 size={24} className="text-green-600" />
               </div>
-              <div>
+              <div className="flex-1">
                 <div className="text-2xl font-bold text-gray-900">
                   {loading ? '...' : formatCurrency(stats.totalStockValue)}
                 </div>
                 <div className="text-sm text-gray-600">Stock Value</div>
               </div>
+              <ArrowRight size={20} className="text-gray-400" />
             </div>
           </div>
 
           {/* Low Stock Alert */}
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+          <div 
+            onClick={() => setActiveModal('lowStock')}
+            className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md hover:border-red-300 transition-all cursor-pointer"
+          >
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
                 <AlertCircle size={24} className="text-red-600" />
               </div>
-              <div>
+              <div className="flex-1">
                 <div className="text-2xl font-bold text-gray-900">
                   {loading ? '...' : stats.lowStockItems}
                 </div>
                 <div className="text-sm text-gray-600">Low Stock Items</div>
               </div>
+              <ArrowRight size={20} className="text-gray-400" />
             </div>
           </div>
 
           {/* Total Vendors */}
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+          <div 
+            onClick={() => setActiveModal('vendors')}
+            className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md hover:border-purple-300 transition-all cursor-pointer"
+          >
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
                 <GraduationCap size={24} className="text-purple-600" />
               </div>
-              <div>
+              <div className="flex-1">
                 <div className="text-2xl font-bold text-gray-900">
                   {loading ? '...' : stats.totalVendors}
                 </div>
                 <div className="text-sm text-gray-600">Total Vendors</div>
               </div>
+              <ArrowRight size={20} className="text-gray-400" />
             </div>
           </div>
         </div>
@@ -522,6 +555,246 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Modals */}
+      {/* Products Modal */}
+      {activeModal === 'products' && (
+        <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setActiveModal(null)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <Package size={20} className="text-blue-600" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">All Products</h2>
+                  <p className="text-sm text-gray-500">Total: {products.length} products</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setActiveModal(null)}
+                className="w-8 h-8 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition-colors"
+              >
+                <X size={18} className="text-gray-600" />
+              </button>
+            </div>
+            <div className="p-6">
+              {products.length === 0 ? (
+                <div className="text-center py-12">
+                  <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500">No products found</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {products.map((product) => (
+                    <div key={product._id} className="p-4 border border-gray-200 rounded-lg hover:border-blue-300 transition-colors">
+                      <div className="flex items-start justify-between mb-2">
+                        <h3 className="font-semibold text-gray-900">{product.name}</h3>
+                        <span className={`px-2 py-1 text-xs rounded-full ${
+                          (product.stock || 0) < (product.lowStockThreshold || 10)
+                            ? 'bg-red-100 text-red-700'
+                            : 'bg-green-100 text-green-700'
+                        }`}>
+                          Stock: {product.stock || 0}
+                        </span>
+                      </div>
+                      <div className="text-sm text-gray-600 space-y-1">
+                        <p>Price: {formatCurrency(product.price)}</p>
+                        <p>Value: {formatCurrency((product.stock || 0) * (product.price || 0))}</p>
+                        {product.forCourse && <p>Course: {product.forCourse}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stock Value Modal */}
+      {activeModal === 'stockValue' && (
+        <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setActiveModal(null)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                  <BarChart3 size={20} className="text-green-600" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">Stock Value Breakdown</h2>
+                  <p className="text-sm text-gray-500">Total Value: {formatCurrency(stats.totalStockValue)}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setActiveModal(null)}
+                className="w-8 h-8 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition-colors"
+              >
+                <X size={18} className="text-gray-600" />
+              </button>
+            </div>
+            <div className="p-6">
+              {productsWithValue.length === 0 ? (
+                <div className="text-center py-12">
+                  <BarChart3 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500">No products found</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Stock</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Unit Price</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total Value</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {productsWithValue.map((product) => (
+                        <tr key={product._id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-sm font-medium text-gray-900">{product.name}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900 text-right">{product.stock || 0}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900 text-right">{formatCurrency(product.price || 0)}</td>
+                          <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right">{formatCurrency(product.stockValue)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-gray-50">
+                      <tr>
+                        <td colSpan="3" className="px-4 py-3 text-sm font-semibold text-gray-900 text-right">Total Stock Value:</td>
+                        <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">{formatCurrency(stats.totalStockValue)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Low Stock Items Modal */}
+      {activeModal === 'lowStock' && (
+        <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setActiveModal(null)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                  <AlertCircle size={20} className="text-red-600" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">Low Stock Items</h2>
+                  <p className="text-sm text-gray-500">{lowStockProducts.length} items need restocking</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setActiveModal(null)}
+                className="w-8 h-8 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition-colors"
+              >
+                <X size={18} className="text-gray-600" />
+              </button>
+            </div>
+            <div className="p-6">
+              {lowStockProducts.length === 0 ? (
+                <div className="text-center py-12">
+                  <AlertCircle className="w-16 h-16 text-green-300 mx-auto mb-4" />
+                  <p className="text-gray-500 font-medium">All products are well stocked!</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Current Stock</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Threshold</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Unit Price</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {lowStockProducts.map((product) => {
+                        const threshold = typeof product.lowStockThreshold === 'number' ? product.lowStockThreshold : 10;
+                        const stock = product.stock || 0;
+                        const isOutOfStock = stock === 0;
+                        return (
+                          <tr key={product._id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-sm font-medium text-gray-900">{product.name}</td>
+                            <td className="px-4 py-3 text-sm text-right">
+                              <span className={`font-semibold ${isOutOfStock ? 'text-red-600' : 'text-orange-600'}`}>
+                                {stock}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600 text-right">{threshold}</td>
+                            <td className="px-4 py-3 text-sm text-gray-900 text-right">{formatCurrency(product.price || 0)}</td>
+                            <td className="px-4 py-3 text-right">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                isOutOfStock
+                                  ? 'bg-red-100 text-red-800'
+                                  : 'bg-orange-100 text-orange-800'
+                              }`}>
+                                {isOutOfStock ? 'Out of Stock' : 'Low Stock'}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Vendors Modal */}
+      {activeModal === 'vendors' && (
+        <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setActiveModal(null)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                  <GraduationCap size={20} className="text-purple-600" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">All Vendors</h2>
+                  <p className="text-sm text-gray-500">Total: {vendors.length} vendors</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setActiveModal(null)}
+                className="w-8 h-8 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition-colors"
+              >
+                <X size={18} className="text-gray-600" />
+              </button>
+            </div>
+            <div className="p-6">
+              {vendors.length === 0 ? (
+                <div className="text-center py-12">
+                  <GraduationCap className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500">No vendors found</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {vendors.map((vendor) => (
+                    <div key={vendor._id} className="p-4 border border-gray-200 rounded-lg hover:border-purple-300 transition-colors">
+                      <h3 className="font-semibold text-gray-900 mb-2">{vendor.name}</h3>
+                      <div className="text-sm text-gray-600 space-y-1">
+                        {vendor.email && <p>Email: {vendor.email}</p>}
+                        {vendor.phone && <p>Phone: {vendor.phone}</p>}
+                        {vendor.address && <p>Address: {vendor.address}</p>}
+                        {vendor.contactPerson && <p>Contact: {vendor.contactPerson}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -40,7 +40,7 @@ const StudentDue = () => {
   const [productsError, setProductsError] = useState('');
   const [studentsError, setStudentsError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
-  const [dueFilters, setDueFilters] = useState({ search: '', course: '', year: '', branch: '' });
+  const [dueFilters, setDueFilters] = useState({ search: '', course: '', year: '', branch: '', semester: '' });
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -48,6 +48,7 @@ const StudentDue = () => {
     course: '',
     year: '',
     branch: '',
+    semester: '',
     includeSummary: true,
     includeItemDetails: false,
   });
@@ -85,7 +86,18 @@ const StudentDue = () => {
       if (response.ok) {
         const data = await response.json();
         setStudents(Array.isArray(data) ? data : []);
-        const uniqueCourses = Array.from(new Set((data || []).map(s => s.course))).filter(Boolean);
+        // Normalize courses: convert to lowercase and trim, then create a map to preserve original casing
+        const courseMap = new Map();
+        (data || []).forEach(student => {
+          if (student.course) {
+            const normalized = student.course.toLowerCase().trim();
+            // Store the first occurrence with original casing
+            if (!courseMap.has(normalized)) {
+              courseMap.set(normalized, student.course.trim());
+            }
+          }
+        });
+        const uniqueCourses = Array.from(courseMap.values());
         setCourses(uniqueCourses);
       } else {
         throw new Error('Failed to fetch students');
@@ -128,7 +140,18 @@ const StudentDue = () => {
   }, [fetchStudents, fetchProducts]);
 
   const courseOptions = useMemo(() => {
-    return [...courses].filter(Boolean).sort((a, b) => a.localeCompare(b));
+    // Further deduplicate and normalize for display
+    const normalizedMap = new Map();
+    courses.forEach(course => {
+      if (course) {
+        const normalized = course.toLowerCase().trim();
+        if (!normalizedMap.has(normalized)) {
+          normalizedMap.set(normalized, course.trim());
+        }
+      }
+    });
+    return Array.from(normalizedMap.values())
+      .sort((a, b) => a.localeCompare(b));
   }, [courses]);
 
   const yearOptions = useMemo(() => {
@@ -140,6 +163,17 @@ const StudentDue = () => {
       }
     });
     return Array.from(years).sort((a, b) => a - b);
+  }, [students]);
+
+  const semesterOptions = useMemo(() => {
+    const semesters = new Set();
+    students.forEach(student => {
+      const numericSemester = Number(student.semester);
+      if (!Number.isNaN(numericSemester) && numericSemester > 0) {
+        semesters.add(numericSemester);
+      }
+    });
+    return Array.from(semesters).sort((a, b) => a - b);
   }, [students]);
 
   const branchOptions = useMemo(() => {
@@ -287,12 +321,17 @@ const StudentDue = () => {
     const selectedCourse = normalizeValue(dueFilters.course);
     const selectedYear = Number(dueFilters.year);
     const selectedBranch = dueFilters.branch ? normalizeValue(dueFilters.branch) : null;
+    const selectedSemester = dueFilters.semester ? Number(dueFilters.semester) : null;
 
     return dueStudents.filter(record => {
       const { student } = record;
       if (selectedCourse && normalizeValue(student.course) !== selectedCourse) return false;
       if (!Number.isNaN(selectedYear) && selectedYear > 0 && Number(student.year) !== selectedYear) return false;
       if (selectedBranch && normalizeValue(student.branch) !== selectedBranch) return false;
+      if (selectedSemester !== null && !Number.isNaN(selectedSemester) && selectedSemester > 0) {
+        const studentSemester = Number(student.semester);
+        if (Number.isNaN(studentSemester) || studentSemester !== selectedSemester) return false;
+      }
 
       if (searchValue) {
         const matchesSearch =
@@ -331,7 +370,7 @@ const StudentDue = () => {
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [dueFilters]);
+  }, [dueFilters.search, dueFilters.course, dueFilters.year, dueFilters.branch, dueFilters.semester]);
 
   const handlePageChange = (newPage) => {
     if (newPage >= 1 && newPage <= totalPages) {
@@ -355,6 +394,7 @@ const StudentDue = () => {
       course: dueFilters.course || '',
       year: dueFilters.year || '',
       branch: dueFilters.branch || '',
+      semester: dueFilters.semester || '',
       includeSummary: true,
       includeItemDetails: false,
     });
@@ -369,10 +409,15 @@ const StudentDue = () => {
         const selectedCourse = normalizeValue(reportFilters.course);
         const selectedYear = Number(reportFilters.year);
         const selectedBranch = reportFilters.branch ? normalizeValue(reportFilters.branch) : null;
+        const selectedSemester = reportFilters.semester ? Number(reportFilters.semester) : null;
 
         if (selectedCourse && normalizeValue(student.course) !== selectedCourse) return false;
         if (!Number.isNaN(selectedYear) && selectedYear > 0 && Number(student.year) !== selectedYear) return false;
         if (selectedBranch && normalizeValue(student.branch) !== selectedBranch) return false;
+        if (selectedSemester !== null && !Number.isNaN(selectedSemester) && selectedSemester > 0) {
+          const studentSemester = Number(student.semester);
+          if (Number.isNaN(studentSemester) || studentSemester !== selectedSemester) return false;
+        }
         return true;
       });
 
@@ -421,6 +466,10 @@ const StudentDue = () => {
       }
       if (reportFilters.branch) {
         pdf.text(`Branch: ${reportFilters.branch}`, 25, yPos);
+        yPos += 5;
+      }
+      if (reportFilters.semester) {
+        pdf.text(`Semester: ${reportFilters.semester}`, 25, yPos);
         yPos += 5;
       }
       pdf.text(`Generated on: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`, 25, yPos);
@@ -701,8 +750,18 @@ const StudentDue = () => {
                   <option key={branch} value={branch}>{branch}</option>
                 ))}
               </select>
+              <select
+                value={dueFilters.semester}
+                onChange={(e) => setDueFilters({ ...dueFilters, semester: e.target.value })}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">All Semesters</option>
+                {semesterOptions.map(semester => (
+                  <option key={semester} value={String(semester)}>{`Semester ${semester}`}</option>
+                ))}
+              </select>
               <button
-                onClick={() => setDueFilters({ search: '', course: '', year: '', branch: '' })}
+                onClick={() => setDueFilters({ search: '', course: '', year: '', branch: '', semester: '' })}
                 className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
               >
                 Reset
@@ -1020,6 +1079,20 @@ const StudentDue = () => {
                     <option value="">All Branches</option>
                     {branchOptions.map(branch => (
                       <option key={branch} value={branch}>{branch}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Semester</label>
+                  <select
+                    value={reportFilters.semester}
+                    onChange={(e) => setReportFilters({ ...reportFilters, semester: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  >
+                    <option value="">All Semesters</option>
+                    {semesterOptions.map(semester => (
+                      <option key={semester} value={String(semester)}>{`Semester ${semester}`}</option>
                     ))}
                   </select>
                 </div>
