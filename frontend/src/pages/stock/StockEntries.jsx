@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Filter, Package, Building2, FileText, Calendar, DollarSign, Eye, Trash2, X } from 'lucide-react';
+import { Search, Filter, Package, Building2, FileText, Calendar, DollarSign, Eye, Trash2, X, Edit2, Save } from 'lucide-react';
 import { apiUrl } from '../../utils/api';
 
 const StockEntries = () => {
@@ -13,8 +13,17 @@ const StockEntries = () => {
     endDate: '',
   });
   const [selectedEntry, setSelectedEntry] = useState(null);
+  const [editingEntry, setEditingEntry] = useState(null);
+  const [editFormData, setEditFormData] = useState({
+    quantity: '',
+    invoiceNumber: '',
+    invoiceDate: '',
+    purchasePrice: '',
+    remarks: '',
+  });
   const [products, setProducts] = useState([]);
   const [vendors, setVendors] = useState([]);
+  const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
     fetchStockEntries();
@@ -68,6 +77,65 @@ const StockEntries = () => {
       }
     } catch (err) {
       console.error('Error fetching vendors:', err);
+    }
+  };
+
+  const handleEdit = (entry) => {
+    setEditingEntry(entry);
+    setEditFormData({
+      quantity: entry.quantity || '',
+      invoiceNumber: entry.invoiceNumber || '',
+      invoiceDate: entry.invoiceDate ? new Date(entry.invoiceDate).toISOString().split('T')[0] : '',
+      purchasePrice: entry.purchasePrice || '',
+      remarks: entry.remarks || '',
+    });
+  };
+
+  const handleUpdate = async (e) => {
+    e.preventDefault();
+    if (!editingEntry) return;
+
+    setUpdating(true);
+    try {
+      const updateData = {
+        quantity: Number(editFormData.quantity),
+        invoiceNumber: editFormData.invoiceNumber,
+        invoiceDate: editFormData.invoiceDate || undefined,
+        purchasePrice: Number(editFormData.purchasePrice) || 0,
+        remarks: editFormData.remarks,
+      };
+
+      const res = await fetch(apiUrl(`/api/stock-entries/${editingEntry._id}`), {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updateData),
+      });
+
+      if (res.ok) {
+        const updated = await res.json();
+        setStockEntries(prev => prev.map(e => e._id === editingEntry._id ? updated : e));
+        setEditingEntry(null);
+        setEditFormData({
+          quantity: '',
+          invoiceNumber: '',
+          invoiceDate: '',
+          purchasePrice: '',
+          remarks: '',
+        });
+        // Refresh products to update stock
+        fetchProducts();
+        alert('Stock entry updated successfully');
+      } else {
+        const error = await res.json();
+        throw new Error(error.message || 'Failed to update stock entry');
+      }
+    } catch (err) {
+      console.error('Error updating stock entry:', err);
+      alert(err.message || 'Error updating stock entry');
+    } finally {
+      setUpdating(false);
     }
   };
 
@@ -298,6 +366,13 @@ const StockEntries = () => {
                     <Eye size={16} />
                   </button>
                   <button
+                    onClick={() => handleEdit(entry)}
+                    className="px-3 py-2 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors"
+                    title="Edit Entry"
+                  >
+                    <Edit2 size={16} />
+                  </button>
+                  <button
                     onClick={() => handleDelete(entry._id)}
                     className="px-3 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors"
                     title="Delete"
@@ -397,6 +472,197 @@ const StockEntries = () => {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Stock Entry Modal */}
+      {editingEntry && (
+        <div className="fixed inset-0 backdrop-blur-sm bg-gray-900 bg-opacity-30 flex items-center justify-center z-50 p-4" onClick={() => {
+          setEditingEntry(null);
+          setEditFormData({
+            quantity: '',
+            invoiceNumber: '',
+            invoiceDate: '',
+            purchasePrice: '',
+            remarks: '',
+          });
+        }}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                  <Edit2 size={20} className="text-green-600" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">Edit Stock Entry</h2>
+                  <p className="text-sm text-gray-500">{editingEntry.product?.name || 'Unknown Product'}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setEditingEntry(null);
+                  setEditFormData({
+                    quantity: '',
+                    invoiceNumber: '',
+                    invoiceDate: '',
+                    purchasePrice: '',
+                    remarks: '',
+                  });
+                }}
+                className="w-8 h-8 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition-colors"
+              >
+                <X size={18} className="text-gray-600" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdate} className="p-6 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Product <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={editingEntry.product?.name || 'Unknown Product'}
+                    disabled
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Vendor <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={editingEntry.vendor?.name || 'Unknown Vendor'}
+                    disabled
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Quantity <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={editFormData.quantity}
+                    onChange={(e) => setEditFormData({ ...editFormData, quantity: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Note: Changing quantity will adjust product stock</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Unit Purchase Price
+                  </label>
+                  <div className="relative">
+                    <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={editFormData.purchasePrice}
+                      onChange={(e) => setEditFormData({ ...editFormData, purchasePrice: e.target.value })}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Invoice Number
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.invoiceNumber}
+                    onChange={(e) => setEditFormData({ ...editFormData, invoiceNumber: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="Enter invoice number"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Invoice Date
+                  </label>
+                  <div className="relative">
+                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                    <input
+                      type="date"
+                      value={editFormData.invoiceDate}
+                      onChange={(e) => setEditFormData({ ...editFormData, invoiceDate: e.target.value })}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Remarks
+                </label>
+                <textarea
+                  value={editFormData.remarks}
+                  onChange={(e) => setEditFormData({ ...editFormData, remarks: e.target.value })}
+                  rows={3}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  placeholder="Enter any remarks or notes..."
+                />
+              </div>
+
+              {editFormData.quantity && editFormData.purchasePrice && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <p className="text-sm text-gray-600 mb-1">Calculated Total Cost:</p>
+                  <p className="text-xl font-bold text-green-700">
+                    {formatCurrency((Number(editFormData.quantity) || 0) * (Number(editFormData.purchasePrice) || 0))}
+                  </p>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingEntry(null);
+                    setEditFormData({
+                      quantity: '',
+                      invoiceNumber: '',
+                      invoiceDate: '',
+                      purchasePrice: '',
+                      remarks: '',
+                    });
+                  }}
+                  className="px-6 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+                  disabled={updating}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={updating}
+                  className="px-6 py-2 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg hover:from-green-700 hover:to-green-800 transition-all font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {updating ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      Updating...
+                    </>
+                  ) : (
+                    <>
+                      <Save size={18} />
+                      Update Entry
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
