@@ -3,6 +3,13 @@ import { Search, Filter, Package, Building2, FileText, Calendar, DollarSign, Eye
 import { apiUrl } from '../../utils/api';
 
 const StockEntries = () => {
+  // Get current user from localStorage
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const isSuperAdmin = currentUser?.role === 'Administrator';
+  const permissions = currentUser?.permissions || [];
+  // Check if user has permission to edit stock entries
+  const canEditStockEntries = isSuperAdmin || permissions.includes('stock-entry-edit');
+  
   const [stockEntries, setStockEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -365,13 +372,15 @@ const StockEntries = () => {
                   >
                     <Eye size={16} />
                   </button>
-                  <button
-                    onClick={() => handleEdit(entry)}
-                    className="px-3 py-2 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors"
-                    title="Edit Entry"
-                  >
-                    <Edit2 size={16} />
-                  </button>
+                  {canEditStockEntries && (
+                    <button
+                      onClick={() => handleEdit(entry)}
+                      className="px-3 py-2 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors"
+                      title="Edit Entry"
+                    >
+                      <Edit2 size={16} />
+                    </button>
+                  )}
                   <button
                     onClick={() => handleDelete(entry._id)}
                     className="px-3 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors"

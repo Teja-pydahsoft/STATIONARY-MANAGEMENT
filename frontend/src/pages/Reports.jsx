@@ -51,18 +51,29 @@ const Reports = () => {
     vendor: '',
   });
   const [vendors, setVendors] = useState([]);
+  const [stockEntries, setStockEntries] = useState([]);
+  const [stockEntriesLoading, setStockEntriesLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [branchTransferPage, setBranchTransferPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [itemsSoldExpanded, setItemsSoldExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState('daily'); // 'daily', 'monthly', 'stock'
+  const [expandedDays, setExpandedDays] = useState(new Set()); // Track expanded days: "monthKey-dayKey"
 
   useEffect(() => {
     fetchTransactions();
     fetchStudents();
     fetchVendors();
     fetchSettings();
+    fetchStockEntries();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'stock') {
+      fetchStockEntries();
+    }
+  }, [activeTab]);
 
   const fetchSettings = async () => {
     try {
@@ -88,6 +99,21 @@ const Reports = () => {
       }
     } catch (error) {
       console.error('Error fetching vendors:', error);
+    }
+  };
+
+  const fetchStockEntries = async () => {
+    try {
+      setStockEntriesLoading(true);
+      const response = await fetch(apiUrl('/api/stock-entries'));
+      if (response.ok) {
+        const data = await response.json();
+        setStockEntries(Array.isArray(data) ? data : []);
+      }
+    } catch (error) {
+      console.error('Error fetching stock entries:', error);
+    } finally {
+      setStockEntriesLoading(false);
     }
   };
 
@@ -355,7 +381,237 @@ const Reports = () => {
     };
   }, [studentTransactions, calculateDayEndSales]);
 
+  // Calculate monthly statistics with items sold and day-wise breakdown
+  const monthlyStats = useMemo(() => {
+    const revenueTransactions = studentTransactions.filter(t => t.transactionType !== 'branch_transfer');
+    const monthMap = new Map();
+    
+    revenueTransactions.forEach(transaction => {
+      const date = new Date(transaction.transactionDate);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const monthName = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      const dayKey = date.toISOString().split('T')[0];
+      const dayName = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      
+      if (!monthMap.has(monthKey)) {
+        monthMap.set(monthKey, {
+          month: monthName,
+          monthKey,
+          transactions: [],
+          totalAmount: 0,
+          paidAmount: 0,
+          unpaidAmount: 0,
+          paidCount: 0,
+          unpaidCount: 0,
+          itemsSold: [],
+          dayWiseBreakdown: new Map(),
+        });
+      }
+      
+      const monthData = monthMap.get(monthKey);
+      monthData.transactions.push(transaction);
+      monthData.totalAmount += transaction.totalAmount || 0;
+      if (transaction.isPaid) {
+        monthData.paidAmount += transaction.totalAmount || 0;
+        monthData.paidCount++;
+      } else {
+        monthData.unpaidAmount += transaction.totalAmount || 0;
+        monthData.unpaidCount++;
+      }
+
+      // Calculate day-wise breakdown for this month
+      if (!monthData.dayWiseBreakdown.has(dayKey)) {
+        monthData.dayWiseBreakdown.set(dayKey, {
+          date: dayKey,
+          dayName,
+          transactions: [],
+          totalAmount: 0,
+          paidAmount: 0,
+          unpaidAmount: 0,
+          paidCount: 0,
+          unpaidCount: 0,
+          itemsSold: [],
+        });
+      }
+      const dayData = monthData.dayWiseBreakdown.get(dayKey);
+      dayData.transactions.push(transaction);
+      dayData.totalAmount += transaction.totalAmount || 0;
+      if (transaction.isPaid) {
+        dayData.paidAmount += transaction.totalAmount || 0;
+        dayData.paidCount++;
+      } else {
+        dayData.unpaidAmount += transaction.totalAmount || 0;
+        dayData.unpaidCount++;
+      }
+
+      // Calculate items sold for this day
+      if (transaction.items && Array.isArray(transaction.items)) {
+        transaction.items.forEach(item => {
+          const setQuantity = Number(item.quantity) || 0;
+          const setComponents = Array.isArray(item.setComponents) ? item.setComponents : [];
+          const isSet = item.isSet || setComponents.length > 0;
+          
+          if (isSet && setComponents.length > 0) {
+            // If it's a set, expand into component items
+            setComponents.forEach(component => {
+              const componentName = component.name || component.productNameSnapshot || 'N/A';
+              const componentQty = Number(component.quantity) || 1;
+              const totalQuantity = componentQty * setQuantity;
+              
+              const existingItem = dayData.itemsSold.find(i => i.name === componentName);
+              if (existingItem) {
+                existingItem.quantity += totalQuantity;
+              } else {
+                dayData.itemsSold.push({ name: componentName, quantity: totalQuantity });
+              }
+            });
+          } else {
+            // Regular item (not a set)
+            const itemName = item.name || 'N/A';
+            const quantity = setQuantity;
+            
+            const existingItem = dayData.itemsSold.find(i => i.name === itemName);
+            if (existingItem) {
+              existingItem.quantity += quantity;
+            } else {
+              dayData.itemsSold.push({ name: itemName, quantity });
+            }
+          }
+        });
+      }
+
+      // Calculate items sold for this transaction
+      if (transaction.items && Array.isArray(transaction.items)) {
+        transaction.items.forEach(item => {
+          const setQuantity = Number(item.quantity) || 0;
+          const setComponents = Array.isArray(item.setComponents) ? item.setComponents : [];
+          const isSet = item.isSet || setComponents.length > 0;
+          
+          if (isSet && setComponents.length > 0) {
+            // If it's a set, expand into component items
+            setComponents.forEach(component => {
+              const componentName = component.name || component.productNameSnapshot || 'N/A';
+              const componentQty = Number(component.quantity) || 1;
+              const totalQuantity = componentQty * setQuantity;
+              
+              const existingItem = monthData.itemsSold.find(i => i.name === componentName);
+              if (existingItem) {
+                existingItem.quantity += totalQuantity;
+              } else {
+                monthData.itemsSold.push({ name: componentName, quantity: totalQuantity });
+              }
+            });
+          } else {
+            // Regular item (not a set)
+            const itemName = item.name || 'N/A';
+            const quantity = setQuantity;
+            
+            const existingItem = monthData.itemsSold.find(i => i.name === itemName);
+            if (existingItem) {
+              existingItem.quantity += quantity;
+            } else {
+              monthData.itemsSold.push({ name: itemName, quantity });
+            }
+          }
+        });
+      }
+    });
+    
+    // Sort items sold by quantity for each month and convert dayWiseBreakdown Map to Array
+    monthMap.forEach(monthData => {
+      monthData.itemsSold.sort((a, b) => b.quantity - a.quantity);
+      const dayWiseArray = Array.from(monthData.dayWiseBreakdown.values())
+        .sort((a, b) => b.date.localeCompare(a.date));
+      // Sort items sold for each day
+      dayWiseArray.forEach(day => {
+        day.itemsSold.sort((a, b) => b.quantity - a.quantity);
+      });
+      monthData.dayWiseBreakdown = dayWiseArray;
+    });
+    
+    return Array.from(monthMap.values()).sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+  }, [studentTransactions]);
+
+  // Calculate day-wise breakdown
+  const dayWiseBreakdown = useMemo(() => {
+    const revenueTransactions = studentTransactions.filter(t => t.transactionType !== 'branch_transfer');
+    const dayMap = new Map();
+    
+    revenueTransactions.forEach(transaction => {
+      const date = new Date(transaction.transactionDate);
+      const dayKey = date.toISOString().split('T')[0];
+      const dayName = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      
+      if (!dayMap.has(dayKey)) {
+        dayMap.set(dayKey, {
+          date: dayKey,
+          dayName,
+          transactions: [],
+          totalAmount: 0,
+          paidAmount: 0,
+          unpaidAmount: 0,
+          paidCount: 0,
+          unpaidCount: 0,
+        });
+      }
+      
+      const dayData = dayMap.get(dayKey);
+      dayData.transactions.push(transaction);
+      dayData.totalAmount += transaction.totalAmount || 0;
+      if (transaction.isPaid) {
+        dayData.paidAmount += transaction.totalAmount || 0;
+        dayData.paidCount++;
+      } else {
+        dayData.unpaidAmount += transaction.totalAmount || 0;
+        dayData.unpaidCount++;
+      }
+    });
+    
+    return Array.from(dayMap.values()).sort((a, b) => b.date.localeCompare(a.date));
+  }, [studentTransactions]);
+
   const generateDayEndReport = async (transactions) => {
+    // Filter transactions by date range if specified
+    let filteredTransactions = transactions;
+    if (reportFilters.startDate || reportFilters.endDate) {
+      filteredTransactions = transactions.filter(transaction => {
+        const transDate = new Date(transaction.transactionDate);
+        if (reportFilters.startDate && transDate < new Date(reportFilters.startDate)) return false;
+        if (reportFilters.endDate && transDate > new Date(reportFilters.endDate + 'T23:59:59')) return false;
+        return true;
+      });
+    }
+
+    // Calculate day-wise breakdown for filtered transactions
+    const dayMap = new Map();
+    filteredTransactions.forEach(transaction => {
+      const date = new Date(transaction.transactionDate);
+      const dayKey = date.toISOString().split('T')[0];
+      const dayName = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      
+      if (!dayMap.has(dayKey)) {
+        dayMap.set(dayKey, {
+          date: dayKey,
+          dayName,
+          transactions: [],
+          totalAmount: 0,
+          paidAmount: 0,
+          unpaidAmount: 0,
+        });
+      }
+      
+      const dayData = dayMap.get(dayKey);
+      dayData.transactions.push(transaction);
+      dayData.totalAmount += transaction.totalAmount || 0;
+      if (transaction.isPaid) {
+        dayData.paidAmount += transaction.totalAmount || 0;
+      } else {
+        dayData.unpaidAmount += transaction.totalAmount || 0;
+      }
+    });
+    
+    const dayWiseData = Array.from(dayMap.values()).sort((a, b) => b.date.localeCompare(a.date));
+
     const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
@@ -382,14 +638,27 @@ const Reports = () => {
     
     let yPos = 34;
 
+    // Report Info Section - Date Range
+    if (reportFilters.startDate || reportFilters.endDate) {
+      pdf.setFontSize(9);
+      pdf.setFont(undefined, 'normal');
+      const dateRangeText = reportFilters.startDate && reportFilters.endDate
+        ? `Date Range: ${reportFilters.startDate} to ${reportFilters.endDate}`
+        : reportFilters.startDate
+        ? `From: ${reportFilters.startDate}`
+        : `Until: ${reportFilters.endDate}`;
+      pdf.text(dateRangeText, 14, yPos);
+      yPos += 5;
+    }
+
     // Report Info Section
     const showStats =
-      transactions.length > 0 &&
+      filteredTransactions.length > 0 &&
       (reportFilters.includeSummary || reportFilters.onlyStatistics);
 
     if (showStats) {
       // Exclude branch transfers from revenue calculations (internal stock movements)
-      const revenueTransactions = transactions.filter(t => t.transactionType !== 'branch_transfer');
+      const revenueTransactions = filteredTransactions.filter(t => t.transactionType !== 'branch_transfer');
       const totalAmount = revenueTransactions.reduce((sum, t) => sum + (t.totalAmount || 0), 0);
       const paidCount = revenueTransactions.filter(t => t.isPaid).length;
       const paidAmount = revenueTransactions.filter(t => t.isPaid).reduce((sum, t) => sum + (t.totalAmount || 0), 0);
@@ -397,12 +666,12 @@ const Reports = () => {
       // Calculate day-end sales summary if enabled
       let salesSummary = null;
       if (reportFilters.includeDayEndSales) {
-        salesSummary = calculateDayEndSales(transactions);
+        salesSummary = calculateDayEndSales(filteredTransactions);
       }
       
       pdf.setFontSize(10);
       pdf.setFont(undefined, 'bold');
-      pdf.text('Statistics', 14, yPos);
+      pdf.text('Statistics (Filtered)', 14, yPos);
       
       const statsY = yPos + 4;
       pdf.setFont(undefined, 'normal');
@@ -412,6 +681,40 @@ const Reports = () => {
       pdf.text(`Paid: ${paidCount} (${formatCurrencyForPDF(paidAmount)})`, 96, statsY);
 
       yPos += 8;
+
+      // Add Day-wise Breakdown if date range is selected
+      if (dayWiseData.length > 0 && (reportFilters.startDate || reportFilters.endDate)) {
+        pdf.setFontSize(9);
+        pdf.setFont(undefined, 'bold');
+        pdf.text('Day-wise Breakdown', 14, yPos);
+        yPos += 5;
+
+        pdf.setFont(undefined, 'normal');
+        pdf.setFontSize(7);
+        pdf.setFillColor(240, 240, 240);
+        pdf.rect(14, yPos - 3, 120, 4, 'F');
+        pdf.setFont(undefined, 'bold');
+        pdf.text('Date', 16, yPos);
+        pdf.text('Transactions', 50, yPos);
+        pdf.text('Total', 80, yPos, { align: 'right' });
+        pdf.text('Paid', 110, yPos, { align: 'right' });
+        yPos += 4;
+
+        pdf.setFont(undefined, 'normal');
+        dayWiseData.forEach((day, idx) => {
+          if (yPos > 180) {
+            pdf.addPage();
+            yPos = 14;
+          }
+          const dateStr = day.dayName.substring(0, 12);
+          pdf.text(dateStr, 16, yPos);
+          pdf.text(`${day.transactions.length}`, 50, yPos);
+          pdf.text(formatCurrencyForPDF(day.totalAmount), 80, yPos, { align: 'right' });
+          pdf.text(formatCurrencyForPDF(day.paidAmount), 110, yPos, { align: 'right' });
+          yPos += 4;
+        });
+        yPos += 3;
+      }
 
       // Add Day-End Sales Summary in statistics if enabled
       if (salesSummary && salesSummary.itemsSold.length > 0) {
@@ -450,7 +753,7 @@ const Reports = () => {
 
 
     // Transactions Table Header
-    if (!reportFilters.onlyStatistics && transactions.length > 0) {
+    if (!reportFilters.onlyStatistics && filteredTransactions.length > 0) {
       pdf.setFontSize(11);
       pdf.setFont(undefined, 'bold');
       pdf.setFillColor(240, 240, 240);
@@ -481,7 +784,7 @@ const Reports = () => {
       pdf.setFont(undefined, 'normal');
       pdf.setFontSize(7);
 
-      transactions.forEach((transaction, index) => {
+      filteredTransactions.forEach((transaction, index) => {
         // Check if we need a new page
         if (yPos > 180) {
           pdf.addPage();
@@ -520,7 +823,7 @@ const Reports = () => {
         yPos += 5;
 
         // Draw separator line
-        if (index < transactions.length - 1) {
+        if (index < filteredTransactions.length - 1) {
           pdf.setDrawColor(220, 220, 220);
           pdf.line(14, yPos, 134, yPos);
           yPos += 2;
@@ -538,7 +841,7 @@ const Reports = () => {
         pdf.text('Item Details', 14, yPos);
         yPos += 6;
 
-        transactions.forEach((transaction, transIndex) => {
+        filteredTransactions.forEach((transaction, transIndex) => {
           if (transaction.items && transaction.items.length > 0) {
             // Check if we need a new page
             if (yPos > 180) {
@@ -1082,7 +1385,55 @@ const Reports = () => {
           </div>
         </div>
 
+        {/* Tab Navigation */}
+        <div className="mb-6 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="flex border-b border-gray-200">
+            <button
+              onClick={() => setActiveTab('daily')}
+              className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
+                activeTab === 'daily'
+                  ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+            >
+              <div className="flex items-center justify-center gap-2">
+                <Calendar size={18} />
+                <span>Daily Transactions</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('monthly')}
+              className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
+                activeTab === 'monthly'
+                  ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+            >
+              <div className="flex items-center justify-center gap-2">
+                <FileText size={18} />
+                <span>Monthly Report</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('stock')}
+              className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
+                activeTab === 'stock'
+                  ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+            >
+              <div className="flex items-center justify-center gap-2">
+                <Package size={18} />
+                <span>Stock Report</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
         <div className="space-y-6">
+          {/* Daily Report Tab */}
+          {activeTab === 'daily' && (
+            <>
           {/* Filters Section */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
               {/* Filter Header */}
@@ -1690,7 +2041,301 @@ const Reports = () => {
               )}
             </div>
             )}
-          </div>
+            </>
+          )}
+
+          {/* Monthly Report Tab */}
+          {activeTab === 'monthly' && (
+            <div className="space-y-6">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">Monthly Report</h2>
+                
+                {monthlyStats.length === 0 ? (
+                  <div className="text-center py-12">
+                    <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                    <p className="text-gray-500">No monthly data available</p>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {monthlyStats.map((month, index) => {
+                      const totalItemsSold = month.itemsSold.reduce((sum, item) => sum + item.quantity, 0);
+                      return (
+                        <div key={index} className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
+                          <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-xl font-semibold text-gray-900">{month.month}</h3>
+                            <span className="text-sm text-gray-500">{month.transactions.length} transactions</span>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                            <div className="bg-blue-50 rounded-lg p-4">
+                              <p className="text-xs text-gray-600 mb-1">Total Amount</p>
+                              <p className="text-lg font-bold text-blue-700">{formatCurrency(month.totalAmount)}</p>
+                            </div>
+                            <div className="bg-green-50 rounded-lg p-4">
+                              <p className="text-xs text-gray-600 mb-1">Paid Amount</p>
+                              <p className="text-lg font-bold text-green-700">{formatCurrency(month.paidAmount)}</p>
+                              <p className="text-xs text-gray-500 mt-1">{month.paidCount} transactions</p>
+                            </div>
+                            <div className="bg-red-50 rounded-lg p-4">
+                              <p className="text-xs text-gray-600 mb-1">Unpaid Amount</p>
+                              <p className="text-lg font-bold text-red-700">{formatCurrency(month.unpaidAmount)}</p>
+                              <p className="text-xs text-gray-500 mt-1">{month.unpaidCount} transactions</p>
+                            </div>
+                            <div className="bg-purple-50 rounded-lg p-4">
+                              <p className="text-xs text-gray-600 mb-1">Collection Rate</p>
+                              <p className="text-lg font-bold text-purple-700">
+                                {month.totalAmount > 0 
+                                  ? `${((month.paidAmount / month.totalAmount) * 100).toFixed(1)}%`
+                                  : '0%'}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Items Sold Section */}
+                          {month.itemsSold.length > 0 && (
+                            <div className="mt-6 pt-6 border-t border-gray-200">
+                              <div className="flex items-center justify-between mb-4">
+                                <h4 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                                  <ShoppingCart size={20} className="text-purple-600" />
+                                  Items Sold
+                                </h4>
+                                <span className="text-sm text-gray-600">
+                                  Total: {totalItemsSold} items ({month.itemsSold.length} unique)
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto">
+                                {month.itemsSold.map((item, itemIndex) => (
+                                  <div key={itemIndex} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200 hover:border-purple-300 transition-colors">
+                                    <div className="flex-1">
+                                      <p className="text-sm font-medium text-gray-900 truncate">{item.name}</p>
+                                    </div>
+                                    <div className="ml-3">
+                                      <span className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-purple-100 text-purple-700 font-semibold text-base">
+                                        {item.quantity}
+                                      </span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Day-wise Breakdown Section */}
+                          {month.dayWiseBreakdown && month.dayWiseBreakdown.length > 0 && (
+                            <div className="mt-6 pt-6 border-t border-gray-200">
+                              <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                                <Calendar size={20} className="text-blue-600" />
+                                Day-wise Breakdown
+                              </h4>
+                              <div className="overflow-x-auto">
+                                <table className="w-full">
+                                  <thead className="bg-gray-50">
+                                    <tr>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-8"></th>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Transactions</th>
+                                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Amount</th>
+                                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Paid</th>
+                                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Unpaid</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="bg-white divide-y divide-gray-200">
+                                    {month.dayWiseBreakdown.map((day, dayIndex) => {
+                                      const dayKey = `${month.monthKey}-${day.date}`;
+                                      const isExpanded = expandedDays.has(dayKey);
+                                      const dayTotalItems = day.itemsSold.reduce((sum, item) => sum + item.quantity, 0);
+                                      
+                                      return (
+                                        <>
+                                          <tr 
+                                            key={dayIndex} 
+                                            className="hover:bg-gray-50 cursor-pointer"
+                                            onClick={() => {
+                                              const newExpanded = new Set(expandedDays);
+                                              if (isExpanded) {
+                                                newExpanded.delete(dayKey);
+                                              } else {
+                                                newExpanded.add(dayKey);
+                                              }
+                                              setExpandedDays(newExpanded);
+                                            }}
+                                          >
+                                            <td className="px-4 py-3 whitespace-nowrap">
+                                              {isExpanded ? (
+                                                <ChevronUp size={16} className="text-gray-500" />
+                                              ) : (
+                                                <ChevronDown size={16} className="text-gray-500" />
+                                              )}
+                                            </td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{day.dayName}</td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{day.transactions.length}</td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-gray-900 text-right">{formatCurrency(day.totalAmount)}</td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-sm text-green-600 text-right">{formatCurrency(day.paidAmount)}</td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-sm text-red-600 text-right">{formatCurrency(day.unpaidAmount)}</td>
+                                          </tr>
+                                          {isExpanded && day.itemsSold.length > 0 && (
+                                            <tr>
+                                              <td colSpan={6} className="px-4 py-4 bg-gray-50">
+                                                <div className="pl-6">
+                                                  <div className="flex items-center justify-between mb-3">
+                                                    <h5 className="text-sm font-semibold text-gray-700">Items Sold on {day.dayName}</h5>
+                                                    <span className="text-xs text-gray-500">
+                                                      {dayTotalItems} items ({day.itemsSold.length} unique)
+                                                    </span>
+                                                  </div>
+                                                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                                    {day.itemsSold.map((item, itemIndex) => (
+                                                      <div key={itemIndex} className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
+                                                        <div className="flex-1">
+                                                          <p className="text-xs font-medium text-gray-900 truncate">{item.name}</p>
+                                                        </div>
+                                                        <div className="ml-2">
+                                                          <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-purple-100 text-purple-700 font-semibold text-sm">
+                                                            {item.quantity}
+                                                          </span>
+                                                        </div>
+                                                      </div>
+                                                    ))}
+                                                  </div>
+                                                </div>
+                                              </td>
+                                            </tr>
+                                          )}
+                                        </>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Stock Report Tab */}
+          {activeTab === 'stock' && (
+            <div className="space-y-6">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">Stock Report</h2>
+                <p className="text-gray-600 mb-6">View stock entries statistics and total amount collected from stock purchases.</p>
+                
+                {stockEntriesLoading ? (
+                  <div className="text-center py-12">
+                    <div className="w-8 h-8 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4"></div>
+                    <p className="text-gray-600">Loading stock statistics...</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Stock Statistics Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                      {/* Total Stock Entries */}
+                      <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="text-xs uppercase tracking-wide text-blue-100 mb-1">Total Entries</p>
+                            <p className="text-2xl font-bold text-white">{stockEntries.length}</p>
+                            <p className="text-xs text-blue-100 mt-2">Stock purchase entries</p>
+                          </div>
+                          <div className="w-12 h-12 bg-blue-400/30 rounded-lg flex items-center justify-center">
+                            <Package size={24} />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Total Quantity */}
+                      <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg p-6 text-white">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="text-xs uppercase tracking-wide text-green-100 mb-1">Total Quantity</p>
+                            <p className="text-2xl font-bold text-white">
+                              {stockEntries.reduce((sum, entry) => sum + (entry.quantity || 0), 0).toLocaleString()}
+                            </p>
+                            <p className="text-xs text-green-100 mt-2">Items purchased</p>
+                          </div>
+                          <div className="w-12 h-12 bg-green-400/30 rounded-lg flex items-center justify-center">
+                            <ShoppingCart size={24} />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Total Cost */}
+                      <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-lg p-6 text-white">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="text-xs uppercase tracking-wide text-purple-100 mb-1">Total Cost</p>
+                            <p className="text-2xl font-bold text-white">
+                              {formatCurrency(stockEntries.reduce((sum, entry) => sum + (entry.totalCost || 0), 0))}
+                            </p>
+                            <p className="text-xs text-purple-100 mt-2">Amount spent</p>
+                          </div>
+                          <div className="w-12 h-12 bg-purple-400/30 rounded-lg flex items-center justify-center">
+                            <DollarSign size={24} />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Unique Vendors */}
+                      <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl shadow-lg p-6 text-white">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="text-xs uppercase tracking-wide text-orange-100 mb-1">Vendors</p>
+                            <p className="text-2xl font-bold text-white">
+                              {new Set(stockEntries.map(e => e.vendor?._id || e.vendor).filter(Boolean)).size}
+                            </p>
+                            <p className="text-xs text-orange-100 mt-2">Unique vendors</p>
+                          </div>
+                          <div className="w-12 h-12 bg-orange-400/30 rounded-lg flex items-center justify-center">
+                            <Building2 size={24} />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Additional Statistics */}
+                    {stockEntries.length > 0 && (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                        <div className="bg-white rounded-lg border border-gray-200 p-4">
+                          <p className="text-sm text-gray-600 mb-1">Average Quantity per Entry</p>
+                          <p className="text-xl font-bold text-gray-900">
+                            {Math.round(stockEntries.reduce((sum, entry) => sum + (entry.quantity || 0), 0) / stockEntries.length)}
+                          </p>
+                        </div>
+                        <div className="bg-white rounded-lg border border-gray-200 p-4">
+                          <p className="text-sm text-gray-600 mb-1">Average Cost per Entry</p>
+                          <p className="text-xl font-bold text-gray-900">
+                            {formatCurrency(stockEntries.reduce((sum, entry) => sum + (entry.totalCost || 0), 0) / stockEntries.length)}
+                          </p>
+                        </div>
+                        <div className="bg-white rounded-lg border border-gray-200 p-4">
+                          <p className="text-sm text-gray-600 mb-1">Average Unit Price</p>
+                          <p className="text-xl font-bold text-gray-900">
+                            {(() => {
+                              const totalQty = stockEntries.reduce((sum, entry) => sum + (entry.quantity || 0), 0);
+                              const totalCost = stockEntries.reduce((sum, entry) => sum + (entry.totalCost || 0), 0);
+                              return totalQty > 0 ? formatCurrency(totalCost / totalQty) : formatCurrency(0);
+                            })()}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {stockEntries.length === 0 && (
+                      <div className="text-center py-12 bg-gray-50 rounded-lg">
+                        <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                        <p className="text-gray-500">No stock entries found</p>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Transaction Details Modal */}
